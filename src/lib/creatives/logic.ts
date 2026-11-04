@@ -159,7 +159,6 @@ export function reschedulePosts(
   _oldEvent: CreativeEvent,
   newEvent: CreativeEvent,
   rules: PostingRule[],
-  currentTime = new Date(),
 ): {
   posts: ExistingPost[];
   taskDueDates: Array<{ taskId: string; dueAt: Date }>;

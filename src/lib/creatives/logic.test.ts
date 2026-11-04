@@ -45,7 +45,7 @@ describe("creative posting logic", () => {
       scheduleOverridden: index === 1, artworkTaskId: `art-${index}`, captionTaskId: `cap-${index}`,
     }));
     const moved = { ...event, startsAt: new Date("2026-11-21T01:00:00Z") };
-    const result = reschedulePosts(posts, event, moved, rules, new Date("2026-10-01T00:00:00Z"));
+    const result = reschedulePosts(posts, event, moved, rules);
     expect(result.posts[0].scheduledAt?.getTime()).toBeGreaterThan(posts[0].scheduledAt!.getTime());
     expect(result.posts[1].scheduledAt).toEqual(posts[1].scheduledAt);
     expect(result.taskDueDates).toHaveLength(2);

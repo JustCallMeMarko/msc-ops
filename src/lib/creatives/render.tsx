@@ -2,6 +2,8 @@ import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { ImageResponse } from "next/og";
 
+/* eslint-disable @next/next/no-img-element */
+
 export type RenderInput = {
   kind: "countdown" | "highlight" | "poster";
   title: string;
@@ -34,7 +36,7 @@ function titleWithLocalEmoji(text: string, emoji?: string) {
     ...(part ? [{ type: "text" as const, text: part }] : []),
     ...(index < parts.length - 1 ? [{ type: "emoji" as const, src: emoji ?? "" }] : []),
   ]).map((part, index) => part.type === "emoji"
-    ? <img key={index} src={part.src} width={70} height={70} />
+    ? <img key={index} src={part.src} width={70} height={70} alt="" />
     : <span key={index}>{part.text}</span>);
 }
 
@@ -46,28 +48,33 @@ export async function renderCreativeImage(input: RenderInput): Promise<ImageResp
   ]);
   const heading = titleWithLocalEmoji(input.title, emoji);
   const photos = input.photos ?? [];
+  const columns = photos.length === 9 ? 3 : 2;
+  const rows = Math.ceil(photos.length / columns);
+  const gap = 8;
+  const photoWidth = (input.width - 160 - gap * (columns - 1)) / columns;
+  const photoHeight = (input.height - 160 - gap * (rows - 1)) / rows;
   const grid = input.kind === "highlight"
-    ? input.photos!.map((src, index) => <img key={index} src={src} style={{ width: photos.length === 4 ? "49%" : "32%", height: photos.length === 4 || photos.length === 6 ? "49%" : "32%", objectFit: "cover" }} />)
+    ? photos.map((src, index) => <img key={index} src={src} alt="" style={{ width: photoWidth, height: photoHeight, objectFit: "cover" }} />)
     : [];
   const background = input.kind === "highlight"
-    ? <div style={{ position: "absolute", inset: 0, display: "flex", flexWrap: "wrap", gap: 8, opacity: 0.52 }}>{grid}</div>
+    ? <div style={{ position: "absolute", top: 80, left: 80, width: input.width - 160, height: input.height - 160, display: "flex", flexWrap: "wrap", gap, opacity: 0.3 }}>{grid}</div>
     : null;
   return new ImageResponse(
     <div style={{ width: "100%", height: "100%", position: "relative", display: "flex", flexDirection: "column", justifyContent: "space-between", padding: 80, background: input.colors.background, color: input.colors.text, fontFamily: "Inter" }}>
       {background}
-      {input.frame && <img src={input.frame} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill" }} />}
+      {input.frame && <img src={input.frame} alt="" style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "fill" }} />}
       <div style={{ display: "flex", flexDirection: "column", gap: 24, position: "relative", zIndex: 1 }}>
-        {input.logo && <img src={input.logo} style={{ width: 150, height: 120, objectFit: "contain" }} />}
-        {input.kind === "countdown" && <div style={{ display: "flex", color: input.colors.accent, fontSize: 42, fontWeight: 700 }}>{input.days} DAYS TO GO</div>}
+        {input.logo && <img src={input.logo} alt="" style={{ width: 150, height: 120, objectFit: "contain" }} />}
+        {input.kind === "countdown" && <div style={{ display: "flex", color: input.colors.accent, fontSize: 42, fontWeight: 700 }}>{`${input.days} DAYS TO GO`}</div>}
         {input.kind === "poster" && <div style={{ color: input.colors.accent, fontSize: 36, fontWeight: 700 }}>YOU’RE INVITED</div>}
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", color: input.colors.primary, fontSize: 86, fontWeight: 700, lineHeight: 1.05 }}>{heading}</div>
         {input.title !== input.eventName && <div style={{ display: "flex", flexWrap: "wrap", color: input.colors.secondary, fontSize: 36 }}>{titleWithLocalEmoji(input.eventName, emoji)}</div>}
         <div style={{ display: "flex", flexDirection: "column", gap: 12, fontSize: 28 }}>
           <div>{input.date}</div><div>{input.venue}</div>
-          {input.kind === "highlight" && <div style={{ color: input.colors.accent }}>{input.attendance}/{input.target} attendees</div>}
+          {input.kind === "highlight" && <div style={{ color: input.colors.accent }}>{`${input.attendance}/${input.target} attendees`}</div>}
         </div>
       </div>
-      {input.lumaQr && <img src={input.lumaQr} style={{ position: "absolute", right: 70, bottom: 70, width: 160, height: 160, background: "white", padding: 8 }} />}
+      {input.lumaQr && <img src={input.lumaQr} alt="" style={{ position: "absolute", right: 70, bottom: 70, width: 160, height: 160, background: "white", padding: 8 }} />}
       <div style={{ position: "relative", zIndex: 1, display: "flex", justifyContent: "space-between", fontSize: 18, opacity: 0.75 }}><span>MSC · NU Dasmariñas</span><span>{POST_KIND_LABEL[input.kind]}</span></div>
     </div>,
     {

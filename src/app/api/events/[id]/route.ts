@@ -120,7 +120,6 @@ export async function PATCH(request: Request, context: Context) {
       current as EventRecord as CreativeEvent,
       updated as EventRecord as CreativeEvent,
       rules.map((rule) => ({ ...rule, anchor: rule.anchor as "event_start" | "event_end" })),
-      currentTime,
     );
     const currentPosts = new Map(eventPosts.map((post) => [post.id, post]));
     for (const post of result.posts) {
