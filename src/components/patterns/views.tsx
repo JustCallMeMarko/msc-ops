@@ -2,20 +2,22 @@
 
 import { useId, useState, type ReactNode } from "react";
 import { CalendarIcon, ColumnsIcon, TableIcon } from "@primer/octicons-react";
-import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
+import { DndContext, useDroppable, type DragEndEvent } from "@dnd-kit/core";
+import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
 import { Input } from "@/components/ui/input";
 
 export type BoardItem = { id: string; content: ReactNode };
 export type BoardColumn = { id: string; title: string; items: BoardItem[] };
 
 function DraggableCard({ item }: { item: BoardItem }) {
-  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: item.id });
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id: item.id });
   return (
     <div
       ref={setNodeRef}
       {...listeners}
       {...attributes}
-      style={{ transform: transform ? `translate3d(${transform.x}px, ${transform.y}px, 0)` : undefined }}
+      style={{ transform: CSS.Transform.toString(transform), transition: undefined }}
       className={`cursor-grab touch-none rounded border border-border bg-background p-3 active:cursor-grabbing ${isDragging ? "opacity-50" : ""}`}
     >
       {item.content}
@@ -28,7 +30,9 @@ function BoardLane({ column }: { column: BoardColumn }) {
   return (
     <section ref={setNodeRef} className={`min-h-36 rounded-md border border-border bg-card p-3 ${isOver ? "ring-2 ring-ring" : ""}`}>
       <h3 className="mb-3 font-semibold">{column.title}</h3>
-      <div className="space-y-2">{column.items.map((item) => <DraggableCard key={item.id} item={item} />)}</div>
+      <SortableContext items={column.items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
+        <div className="min-h-20 space-y-2">{column.items.map((item) => <DraggableCard key={item.id} item={item} />)}</div>
+      </SortableContext>
     </section>
   );
 }
@@ -57,7 +61,7 @@ export function BoardView({ columns: initialColumns, onMove }: { columns: BoardC
       }));
     });
   }
-  return <DndContext id={id} onDragEnd={moveItem}><div className="grid grid-cols-1 gap-3 md:grid-cols-3">{columns.map((column) => <BoardLane key={column.id} column={column} />)}</div></DndContext>;
+  return <DndContext id={id} onDragEnd={moveItem}><div className="grid grid-cols-1 gap-3 md:grid-cols-3 xl:grid-cols-5">{columns.map((column) => <BoardLane key={column.id} column={column} />)}</div></DndContext>;
 }
 
 export function TableView({ children }: { children: ReactNode }) {
@@ -80,10 +84,16 @@ export function EditableCell({ value, onSave }: { value: string; onSave?: (value
   );
 }
 
-export function CalendarView({ month = new Date() }: { month?: Date }) {
+export function CalendarView({ month = new Date(), items = [] }: { month?: Date; items?: Array<{ id: string; date: string; title: string; href: string }> }) {
   const start = new Date(month.getFullYear(), month.getMonth(), 1);
   const days = new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate();
-  return <section aria-label={month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}><h3 className="mb-3 font-semibold">{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h3><div className="grid grid-cols-7 overflow-hidden rounded-md border border-border">{Array.from({ length: days + start.getDay() }, (_, index) => <div key={index} className="min-h-20 border-b border-r border-border p-2 text-xs">{index >= start.getDay() ? index - start.getDay() + 1 : ""}</div>)}</div></section>;
+  return <section aria-label={month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}><h3 className="mb-3 font-semibold">{month.toLocaleDateString(undefined, { month: "long", year: "numeric" })}</h3><div className="grid grid-cols-7 overflow-hidden rounded-md border border-border">{Array.from({ length: days + start.getDay() }, (_, index) => {
+    const day = index - start.getDay() + 1;
+    const key = index >= start.getDay()
+      ? `${month.getFullYear()}-${String(month.getMonth() + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`
+      : "";
+    return <div key={index} className="min-h-24 border-b border-r border-border p-2 text-xs"><span>{index >= start.getDay() ? day : ""}</span><div className="mt-1 space-y-1">{items.filter((item) => item.date.slice(0, 10) === key).map((item) => <a key={item.id} href={item.href} className="block truncate rounded bg-secondary px-1 py-0.5 text-foreground hover:text-primary">{item.title}</a>)}</div></div>;
+  })}</div></section>;
 }
 
 export function SplitView({ main, panel }: { main: ReactNode; panel: ReactNode }) {

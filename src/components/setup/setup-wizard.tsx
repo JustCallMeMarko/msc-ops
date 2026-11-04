@@ -16,7 +16,7 @@ function WizardSteps({ dataDir }: { dataDir: string }) {
   const router = useRouter();
   const search = useSearchParams();
   const requestedStep = Number(search.get("step") ?? 1);
-  const step = Number.isInteger(requestedStep) ? Math.min(4, Math.max(1, requestedStep)) : 1;
+  const step = Number.isInteger(requestedStep) ? Math.min(5, Math.max(1, requestedStep)) : 1;
   const [orgName, setOrgName] = useState("");
   const [shortName, setShortName] = useState("");
   const [nature, setNature] = useState("academic");
@@ -26,6 +26,8 @@ function WizardSteps({ dataDir }: { dataDir: string }) {
   const [providerType, setProviderType] = useState<ProviderType>("openai");
   const [apiKey, setApiKey] = useState("");
   const [busy, setBusy] = useState(false);
+  const [addedCommittees, setAddedCommittees] = useState<string[]>([]);
+  const quickCommittees = ["Creatives", "Finance", "Logistics", "Marketing", "Documentation", "Programs"];
   const syncFolder = /dropbox|onedrive|google drive|icloud/i.test(dataDir);
 
   useEffect(() => {
@@ -39,7 +41,7 @@ function WizardSteps({ dataDir }: { dataDir: string }) {
   }, [step]);
 
   function go(next: number) {
-    router.push(`/setup?step=${Math.min(4, Math.max(1, next))}`);
+    router.push(`/setup?step=${Math.min(5, Math.max(1, next))}`);
   }
 
   async function saveOrg() {
@@ -89,13 +91,13 @@ function WizardSteps({ dataDir }: { dataDir: string }) {
   return (
     <main className="mx-auto flex min-h-screen max-w-3xl flex-col justify-center px-6 py-10">
       <Link href="/" className="text-sm font-semibold">MSC Ops</Link>
-      <div className="mt-8 flex gap-2" aria-label={`Setup step ${step} of 4`}>
-        {[1, 2, 3, 4].map((item) => <span key={item} className={`h-1 flex-1 rounded ${item <= step ? "bg-primary" : "bg-secondary"}`} />)}
+      <div className="mt-8 flex gap-2" aria-label={`Setup step ${step} of 5`}>
+        {[1, 2, 3, 4, 5].map((item) => <span key={item} className={`h-1 flex-1 rounded ${item <= step ? "bg-primary" : "bg-secondary"}`} />)}
       </div>
       <section className="mt-7 rounded-lg border border-border bg-card p-7">
         {step === 1 && (
           <div className="space-y-5">
-            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 1 of 4</p><h1 className="mt-2 text-2xl font-semibold">Set up your organization</h1><p className="mt-2 text-sm text-muted-foreground">You can update these details any time in Settings.</p></div>
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 1 of 5</p><h1 className="mt-2 text-2xl font-semibold">Set up your organization</h1><p className="mt-2 text-sm text-muted-foreground">You can update these details any time in Settings.</p></div>
             <label className="block space-y-1.5 text-sm">Organization name<Input required value={orgName} onChange={(event) => setOrgName(event.target.value)} placeholder="Mark's MSC at NU Dasmariñas" /></label>
             <label className="block space-y-1.5 text-sm">Short name<Input required value={shortName} onChange={(event) => setShortName(event.target.value)} placeholder="MSC" /></label>
             <label className="block space-y-1.5 text-sm">Nature
@@ -109,7 +111,7 @@ function WizardSteps({ dataDir }: { dataDir: string }) {
         )}
         {step === 2 && (
           <div className="space-y-5">
-            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 2 of 4</p><h1 className="mt-2 text-2xl font-semibold">Connect an AI provider</h1><p className="mt-2 text-sm text-muted-foreground">Local models keep prompts on this device. You can change providers later.</p></div>
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 2 of 5</p><h1 className="mt-2 text-2xl font-semibold">Connect an AI provider</h1><p className="mt-2 text-sm text-muted-foreground">Local models keep prompts on this device. You can change providers later.</p></div>
             <div className="grid gap-3 sm:grid-cols-2">
               <button type="button" disabled={detecting || !detected.ollama || busy} onClick={() => void addProvider("ollama")} className="rounded-md border border-border p-4 text-left hover:bg-secondary disabled:opacity-50"><CpuIcon size={18} /><p className="mt-2 font-medium">Ollama</p>{detecting ? <Skeleton className="mt-2 h-4 w-40" /> : <p className="text-sm text-muted-foreground">{detected.ollama ? "Detected · add provider" : "Not detected at 127.0.0.1:11434"}</p>}</button>
               <button type="button" disabled={detecting || !detected.lmstudio || busy} onClick={() => void addProvider("lmstudio")} className="rounded-md border border-border p-4 text-left hover:bg-secondary disabled:opacity-50"><CpuIcon size={18} /><p className="mt-2 font-medium">LM Studio</p>{detecting ? <Skeleton className="mt-2 h-4 w-40" /> : <p className="text-sm text-muted-foreground">{detected.lmstudio ? "Detected · add provider" : "Not detected at 127.0.0.1:1234"}</p>}</button>
@@ -128,24 +130,37 @@ function WizardSteps({ dataDir }: { dataDir: string }) {
         )}
         {step === 3 && (
           <div className="space-y-5">
-            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 3 of 4</p><h1 className="mt-2 text-2xl font-semibold">Keep your data safe</h1><p className="mt-2 text-sm text-muted-foreground">MSC Ops stores its database locally. Anyone with access to this device account can read local app data.</p></div>
-            <div className="flex gap-3 rounded-md border border-border p-4"><ShieldCheckIcon size={20} className="mt-0.5 shrink-0 text-success" /><div><p className="font-medium">Enable full-disk encryption</p><p className="mt-1 text-sm text-muted-foreground">We recommend BitLocker on Windows, FileVault on macOS, or LUKS on Linux to protect the data directory if your device is lost.</p></div></div>
-            {syncFolder && <div className="rounded-md border border-attention/50 bg-attention/10 p-4 text-sm">This data path appears to be in a cloud-synced folder. Syncing active database files can cause corruption. Keep the data directory local and use backups for sharing.</div>}
-            <p className="mono text-xs text-muted-foreground">Data directory: {dataDir}</p>
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 3 of 5 · Optional</p><h1 className="mt-2 text-2xl font-semibold">Add your committees</h1><p className="mt-2 text-sm text-muted-foreground">Start with a few common teams. You can add or rename committees later.</p></div>
+            <div className="flex flex-wrap gap-2">{quickCommittees.map((name) => <Button key={name} variant={addedCommittees.includes(name) ? "outline" : "ghost"} disabled={addedCommittees.includes(name) || busy} onClick={async () => {
+              setBusy(true);
+              const response = await apiFetch("/api/committees", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name, slug: name.toLowerCase().replace(/[^a-z0-9]+/g, "-"), color: "blue", description: "" }) });
+              setBusy(false);
+              if (!response.ok && response.status !== 409) return toast.error("Could not add committee.");
+              setAddedCommittees((current) => [...current, name]);
+            }}>{addedCommittees.includes(name) ? `Added · ${name}` : name}</Button>)}</div>
             <div className="flex justify-between pt-2"><Button variant="ghost" onClick={() => go(4)}>Skip for now</Button><Button onClick={() => go(4)}>Continue</Button></div>
           </div>
         )}
         {step === 4 && (
+          <div className="space-y-5">
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 4 of 5</p><h1 className="mt-2 text-2xl font-semibold">Keep your data safe</h1><p className="mt-2 text-sm text-muted-foreground">MSC Ops stores its database locally. Anyone with access to this device account can read local app data.</p></div>
+            <div className="flex gap-3 rounded-md border border-border p-4"><ShieldCheckIcon size={20} className="mt-0.5 shrink-0 text-success" /><div><p className="font-medium">Enable full-disk encryption</p><p className="mt-1 text-sm text-muted-foreground">We recommend BitLocker on Windows, FileVault on macOS, or LUKS on Linux to protect the data directory if your device is lost.</p></div></div>
+            {syncFolder && <div className="rounded-md border border-attention/50 bg-attention/10 p-4 text-sm">This data path appears to be in a cloud-synced folder. Syncing active database files can cause corruption. Keep the data directory local and use backups for sharing.</div>}
+            <p className="mono text-xs text-muted-foreground">Data directory: {dataDir}</p>
+            <div className="flex justify-between pt-2"><Button variant="ghost" onClick={() => go(5)}>Skip for now</Button><Button onClick={() => go(5)}>Continue</Button></div>
+          </div>
+        )}
+        {step === 5 && (
           <div className="space-y-5 text-center">
             <CheckCircleIcon size={32} className="mx-auto text-success" />
-            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 4 of 4</p><h1 className="mt-2 text-2xl font-semibold">You’re ready</h1><p className="mt-2 text-sm text-muted-foreground">MSC Ops is running locally. Tasks, events, finance, and other modules will arrive in later updates.</p></div>
+            <div><p className="text-xs font-semibold uppercase tracking-wide text-primary">Step 5 of 5</p><h1 className="mt-2 text-2xl font-semibold">You’re ready</h1><p className="mt-2 text-sm text-muted-foreground">MSC Ops is running locally. Tasks, events, finance, and other modules will arrive in later updates.</p></div>
             <Button disabled={busy} onClick={() => void finish()}>{busy ? "Finishing…" : "Open MSC Ops"}</Button>
           </div>
         )}
       </section>
       <div className="mt-4 flex justify-between text-xs text-muted-foreground">
-        <span>Step {step} of 4</span>
-        {step > 1 && step < 4 && <button type="button" onClick={() => go(step + 1)} className="hover:text-foreground">Skip this step</button>}
+        <span>Step {step} of 5</span>
+        {step > 1 && step < 5 && <button type="button" onClick={() => go(step + 1)} className="hover:text-foreground">Skip this step</button>}
       </div>
     </main>
   );

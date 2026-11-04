@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
+import Link from "next/link";
 import { CheckboxIcon, IssueOpenedIcon } from "@primer/octicons-react";
 import { Counter } from "@/components/patterns/counter";
 import { Label } from "@/components/patterns/label";
@@ -18,6 +19,7 @@ export type ListItem = {
   comments?: number;
   assignee?: string;
   closed?: boolean;
+  href?: string;
 };
 
 function ItemRow({ item, selected, onToggle }: { item: ListItem; selected: boolean; onToggle: () => void }) {
@@ -26,7 +28,7 @@ function ItemRow({ item, selected, onToggle }: { item: ListItem; selected: boole
       <Checkbox aria-label={`Select ${item.title}`} checked={selected} onCheckedChange={onToggle} />
       {item.closed ? <CheckboxIcon size={16} className="text-done" /> : <IssueOpenedIcon size={16} className="text-success" />}
       <div className="min-w-0 flex-1">
-        <div className="truncate font-medium">{item.title}</div>
+        {item.href ? <Link href={item.href} className="truncate font-medium hover:text-primary">{item.title}</Link> : <div className="truncate font-medium">{item.title}</div>}
         {item.labels?.length ? <div className="mt-1 flex gap-1">{item.labels.map((label) => <Label key={label}>{label}</Label>)}</div> : null}
       </div>
       {item.due && <RelativeDate date={item.due} />}

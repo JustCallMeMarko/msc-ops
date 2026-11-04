@@ -11,6 +11,7 @@ const labels: Record<string, string> = {
   cbl: "CBL", files: "Files", templates: "Templates", chat: "Chat", manual: "Manual", ai: "AI",
   general: "General", privacy: "Privacy", about: "About",
   compliance: "Compliance", settings: "Settings",
+  committees: "Committees",
 };
 
 export function Topbar({ onTogglePanel, onOpenPalette }: { onTogglePanel: () => void; onOpenPalette: () => void }) {

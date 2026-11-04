@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { CheckCircleIcon, CloudIcon, CpuIcon, PencilIcon, PlusIcon, TrashIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Combobox } from "@/components/ui/combobox";
@@ -15,6 +16,7 @@ import { toastUndo } from "@/components/patterns/toast-undo";
 import { apiFetch } from "@/lib/api-client";
 import { isLocalProviderUrl, PROVIDER_TYPES, type ProviderType } from "@/lib/ai/provider-types";
 import { plural } from "@/lib/utils";
+import { DEFAULT_NUDGE_TEMPLATE } from "@/lib/tasks/logic";
 
 type Provider = {
   id: string; name: string; type: ProviderType; baseUrl: string; hasKey: boolean; keyLast4: string | null;
@@ -24,6 +26,7 @@ type SettingValues = {
   "ai.defaults": { chat?: { providerId: string; model: string }; embedding?: { providerId: string; model: string } };
   "privacy.offlineMode": boolean;
   "privacy.sensitiveLocalOnly": boolean;
+  "tasks.nudgeTemplate": string;
 };
 
 const settingDefaults: SettingValues = {
@@ -31,6 +34,7 @@ const settingDefaults: SettingValues = {
   "ai.defaults": {},
   "privacy.offlineMode": false,
   "privacy.sensitiveLocalOnly": false,
+  "tasks.nudgeTemplate": DEFAULT_NUDGE_TEMPLATE,
 };
 
 function isValidUrl(value: string): boolean {
@@ -93,6 +97,7 @@ export function SettingsContent({ section, dataDir }: { section: string; dataDir
       <div className="max-w-4xl space-y-5">
         {section === "general" && <>
           <GeneralSection value={values["org.profile"]} onSave={(value) => patchSetting("org.profile", value)} />
+          <NudgeTemplateSection value={values["tasks.nudgeTemplate"]} onSave={(value) => patchSetting("tasks.nudgeTemplate", value)} />
           <section className="rounded-md border border-border bg-card p-5">
             <h2 className="font-semibold">Appearance</h2>
             <p className="mt-1 text-sm text-muted-foreground">Choose a theme for this workspace.</p>
@@ -123,6 +128,22 @@ export function SettingsContent({ section, dataDir }: { section: string; dataDir
       </div>
     </div>
   );
+}
+
+function NudgeTemplateSection({ value, onSave }: { value: string; onSave: (value: string) => Promise<void> }) {
+  const [template, setTemplate] = useState(value);
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    setSaving(true);
+    try { await onSave(template); toast.success("Nudge template saved."); }
+    catch { toast.error("Could not save nudge template."); }
+    finally { setSaving(false); }
+  }
+  return <section className="space-y-3 rounded-md border border-border bg-card p-5">
+    <div><h2 className="font-semibold">Task nudge template</h2><p className="text-sm text-muted-foreground">Available tokens: {"{first_name}"}, {"{title}"}, {"{due}"}, {"{days_left}"}, {"{task_ref}"}.</p></div>
+    <Textarea rows={4} value={template} onChange={(event) => setTemplate(event.target.value)} />
+    <Button disabled={saving || !template.trim()} onClick={() => void save()}>{saving ? "Saving…" : "Save template"}</Button>
+  </section>;
 }
 
 function GeneralSection({ value, onSave }: { value: SettingValues["org.profile"]; onSave: (value: SettingValues["org.profile"]) => Promise<void> }) {
