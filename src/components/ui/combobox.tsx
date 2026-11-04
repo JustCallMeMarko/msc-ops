@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Command } from "cmdk";
 import { SearchIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 
 export type ComboOption = { value: string; label: string };
 
@@ -13,12 +14,14 @@ export function Combobox({
   onChange,
   placeholder = "Choose…",
   disabled,
+  buttonClassName,
 }: {
   options: ComboOption[];
   value?: string;
   onChange: (value: string) => void;
   placeholder?: string;
   disabled?: boolean;
+  buttonClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selected = options.find((option) => option.value === value);
@@ -28,7 +31,7 @@ export function Combobox({
         type="button"
         variant="outline"
         disabled={disabled}
-        className="w-full justify-between text-left font-normal"
+        className={cn("w-full justify-between text-left font-normal", buttonClassName)}
         onClick={() => setOpen((current) => !current)}
       >
         <span className={selected ? "" : "text-muted-foreground"}>{selected?.label ?? placeholder}</span>

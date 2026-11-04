@@ -3,9 +3,10 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDataDir } from "@/lib/data-dir";
 import { getDb } from "@/lib/db/client";
-import { events, fileLinks, files } from "@/lib/db/schema";
+import { events, fileLinks, files, tasks } from "@/lib/db/schema";
 import { FileValidationError, validateFileContent } from "@/lib/files/validation";
 import { storeFileBlob } from "@/lib/files/storage";
+import { enumLabel } from "@/lib/ui-labels";
 
 export const dynamic = "force-dynamic";
 const maxRequestSize = 201 * 1024 * 1024;
@@ -68,13 +69,38 @@ export async function GET(request: Request) {
   const links = rows.length
     ? await db.select().from(fileLinks).where(and(inArray(fileLinks.fileId, rows.map((row) => row.id)), isNull(fileLinks.deletedAt)))
     : [];
+  const eventIds = [...new Set(links.filter((link) => link.entityType === "event").map((link) => link.entityId))];
+  const taskIds = [...new Set(links.filter((link) => link.entityType === "task").map((link) => link.entityId))];
+  const linkedEvents = eventIds.length
+    ? await db.select({ id: events.id, name: events.name, slug: events.slug }).from(events)
+      .where(and(inArray(events.id, eventIds), isNull(events.deletedAt)))
+    : [];
+  const linkedTasks = taskIds.length
+    ? await db.select({ id: tasks.id, number: tasks.number, title: tasks.title }).from(tasks)
+      .where(and(inArray(tasks.id, taskIds), isNull(tasks.deletedAt)))
+    : [];
+  const eventById = new Map(linkedEvents.map((event) => [event.id, event]));
+  const taskById = new Map(linkedTasks.map((task) => [task.id, task]));
   const usage: Record<string, { count: number; bytes: number }> = {};
   for (const row of await db.select({ kind: files.kind, size: files.size }).from(files).where(isNull(files.deletedAt))) {
     usage[row.kind] ??= { count: 0, bytes: 0 };
     usage[row.kind].count += 1;
     usage[row.kind].bytes += row.size;
   }
-  return NextResponse.json({ files: rows.map((row) => ({ ...row, links: links.filter((link) => link.fileId === row.id) })), usage });
+  return NextResponse.json({ files: rows.map((row) => ({
+    ...row,
+    links: links.filter((link) => link.fileId === row.id).map((link) => {
+      const event = link.entityType === "event" ? eventById.get(link.entityId) : undefined;
+      const task = link.entityType === "task" ? taskById.get(link.entityId) : undefined;
+      return {
+        ...link,
+        label: event?.name ?? (task ? `#${task.number} ${task.title}` : enumLabel(link.entityType)),
+        href: event
+          ? `/events/${event.slug}?tab=${link.role === "photo" ? "photos" : "files"}`
+          : task ? `/tasks/${task.number}` : null,
+      };
+    }),
+  })), usage });
 }
 
 export async function POST(request: Request) {

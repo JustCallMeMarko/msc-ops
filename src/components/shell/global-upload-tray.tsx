@@ -4,8 +4,9 @@ import { useCallback, useEffect, useState } from "react";
 import { FileIcon, UploadIcon, XIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { enumLabel, FILE_KIND_LABELS } from "@/lib/ui-labels";
 
-const kinds = ["manual", "cbl", "template", "generated", "receipt", "creative", "event_photo", "import", "other"];
+const kinds = Object.keys(FILE_KIND_LABELS);
 type UploadEntry = {
   id: string;
   file: File;
@@ -38,6 +39,10 @@ export function GlobalUploadTray() {
 
   useEffect(() => {
     let dragDepth = 0;
+    function onQueued(event: Event) {
+      const files = (event as CustomEvent<File[]>).detail;
+      if (files?.length) addFiles(files);
+    }
     function hasFiles(event: DragEvent) {
       return Array.from(event.dataTransfer?.types ?? []).includes("Files");
     }
@@ -69,11 +74,13 @@ export function GlobalUploadTray() {
     window.addEventListener("dragover", onDragOver);
     window.addEventListener("dragleave", onDragLeave);
     window.addEventListener("drop", onDrop);
+    window.addEventListener("msc-upload-files", onQueued);
     return () => {
       window.removeEventListener("dragenter", onDragEnter);
       window.removeEventListener("dragover", onDragOver);
       window.removeEventListener("dragleave", onDragLeave);
       window.removeEventListener("drop", onDrop);
+      window.removeEventListener("msc-upload-files", onQueued);
     };
   }, [addFiles]);
 
@@ -148,8 +155,8 @@ export function GlobalUploadTray() {
                 {entry.status !== "uploading" && (
                   <div className="mt-2 flex items-center gap-2">
                     <Select value={entry.kind} onValueChange={(kind) => setEntries((current) => current.map((item) => item.id === entry.id ? { ...item, kind, status: item.status === "error" ? "queued" : item.status } : item))}>
-                      <SelectTrigger aria-label={`Kind for ${entry.file.name}`} className="min-w-0 flex-1"><span>{entry.kind.replace("_", " ")}</span></SelectTrigger>
-                      <SelectContent>{kinds.map((kind) => <SelectItem key={kind} value={kind}>{kind.replace("_", " ")}</SelectItem>)}</SelectContent>
+                    <SelectTrigger aria-label={`Kind for ${entry.file.name}`} className="min-w-0 flex-1"><span>{FILE_KIND_LABELS[entry.kind] ?? enumLabel(entry.kind)}</span></SelectTrigger>
+                      <SelectContent>{kinds.map((kind) => <SelectItem key={kind} value={kind}>{FILE_KIND_LABELS[kind]}</SelectItem>)}</SelectContent>
                     </Select>
                     {entry.status === "queued" || entry.status === "error"
                       ? <Button size="sm" onClick={() => upload(entry)}>{entry.status === "error" ? "Retry" : "Upload"}</Button>
