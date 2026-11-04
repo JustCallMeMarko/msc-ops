@@ -8,7 +8,7 @@ import { AppSidebar } from "@/components/shell/app-sidebar";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { Topbar } from "@/components/shell/topbar";
 
-function ShellContent({ children }: { children: ReactNode }) {
+function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; breadcrumbLabel?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -52,7 +52,7 @@ function ShellContent({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <AppSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onTogglePanel={togglePanel} onOpenPalette={() => setPaletteOpen(true)} />
+        <Topbar onTogglePanel={togglePanel} onOpenPalette={() => setPaletteOpen(true)} breadcrumbLabel={breadcrumbLabel} />
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto p-6">{children}</main>
           {panelOpen && (
@@ -76,6 +76,6 @@ function ShellContent({ children }: { children: ReactNode }) {
   );
 }
 
-export function WorkspaceShell({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<div className="h-screen bg-background" />}><ShellContent>{children}</ShellContent></Suspense>;
+export function WorkspaceShell({ children, breadcrumbLabel }: { children: ReactNode; breadcrumbLabel?: string }) {
+  return <Suspense fallback={<div className="h-screen bg-background" />}><ShellContent breadcrumbLabel={breadcrumbLabel}>{children}</ShellContent></Suspense>;
 }

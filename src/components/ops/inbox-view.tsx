@@ -4,14 +4,16 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { TZDate } from "@date-fns/tz";
 import { addDays } from "date-fns";
-import { CheckCircleIcon, ClockIcon, CopyIcon, ReplyIcon } from "@primer/octicons-react";
+import { CheckCircleIcon, ChevronDownIcon, ClockIcon, CopyIcon, ReplyIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Textarea } from "@/components/ui/textarea";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { Label } from "@/components/patterns/label";
+import { STATUS_LABELS, statusLabel } from "@/components/patterns/status-badge";
 import { RelativeDate } from "@/components/patterns/relative-date";
 import { toastUndo } from "@/components/patterns/toast-undo";
 import { apiFetch } from "@/lib/api-client";
@@ -181,19 +183,23 @@ export function InboxView() {
               <span>{task.reason}</span>
             </div>
           </div>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="ml-auto flex w-full flex-wrap items-center justify-end gap-1.5 sm:w-auto">
             <Button size="sm" variant="outline" onClick={() => void copyNudge(task)}><CopyIcon size={14} />Copy nudge</Button>
             <Button size="sm" variant="outline" onClick={() => { setReplyId(replyId === task.id ? null : task.id); setReplyText(""); }}><ReplyIcon size={14} />Log reply</Button>
-            <Select value="" onValueChange={(value) => void snooze(task, value === "tomorrow" ? snoozeDate(1) : value === "3days" ? snoozeDate(3) : nextMonday())}>
-              <SelectTrigger aria-label="Snooze task" className="h-8 w-24"><span><ClockIcon size={14} /> Snooze</span></SelectTrigger>
-              <SelectContent><SelectItem value="tomorrow">Tomorrow 9am</SelectItem><SelectItem value="3days">3 days</SelectItem><SelectItem value="monday">Next Monday</SelectItem></SelectContent>
-            </Select>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild><Button size="sm" variant="outline" aria-label="Snooze task"><ClockIcon size={14} />Snooze<ChevronDownIcon size={12} /></Button></DropdownMenuTrigger>
+              <DropdownMenuContent>
+                <DropdownMenuItem onSelect={() => void snooze(task, snoozeDate(1))}>Tomorrow 9am</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void snooze(task, snoozeDate(3))}>3 days</DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => void snooze(task, nextMonday())}>Next Monday</DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Button size="sm" variant="ghost" onClick={() => void markDone(task)} aria-label={`Mark ${task.title} done`}><CheckCircleIcon size={15} />Done</Button>
           </div>
         </div>
         {replyId === task.id && <div className="mt-4 grid gap-3 border-t border-border pt-4 md:grid-cols-[minmax(0,1fr)_150px_110px_auto]">
           <Textarea placeholder="Paste the committee’s reply…" value={replyText} onChange={(event) => setReplyText(event.target.value)} />
-          <Select value={replyStatus} onValueChange={setReplyStatus}><SelectTrigger><span>{replyStatus || "Keep status"}</span></SelectTrigger><SelectContent>{["todo", "in_progress", "blocked", "done"].map((status) => <SelectItem key={status} value={status}>{status.replace("_", " ")}</SelectItem>)}</SelectContent></Select>
+          <Select value={replyStatus} onValueChange={setReplyStatus}><SelectTrigger><span>{replyStatus ? statusLabel(replyStatus) : "Keep status"}</span></SelectTrigger><SelectContent>{Object.keys(STATUS_LABELS).filter((status) => status !== "cancelled").map((status) => <SelectItem key={status} value={status}>{statusLabel(status)}</SelectItem>)}</SelectContent></Select>
           <Input type="number" min={0} max={100} aria-label="Progress percent" placeholder={`${task.progress}%`} value={replyProgress} onChange={(event) => setReplyProgress(event.target.value)} />
           <Button disabled={!replyText.trim()} onClick={() => void saveReply(task)}>Save reply</Button>
         </div>}

@@ -10,11 +10,11 @@ export function MetaSidebar({ children }: { children?: ReactNode }) {
   return <aside className="space-y-4 border-l border-border p-4">{children ?? <Label>Metadata appears here</Label>}</aside>;
 }
 
-export function DetailView({ title, status, children, sidebar, commentBox }: { title: string; status: string; children?: ReactNode; sidebar?: ReactNode; commentBox?: ReactNode }) {
+export function DetailView({ title, status, children, sidebar, commentBox }: { title: string; status: ReactNode; children?: ReactNode; sidebar?: ReactNode; commentBox?: ReactNode }) {
   return (
     <div className="grid min-h-96 grid-cols-[minmax(0,1fr)_260px] rounded-md border border-border bg-card">
       <main className="p-5">
-        <div className="mb-5 flex items-center gap-3"><h2 className="text-xl font-semibold">{title}</h2><Label>{status}</Label></div>
+        <div className="mb-5 flex items-center gap-3"><h2 className="text-xl font-semibold">{title}</h2>{status}</div>
         {children ?? <Timeline events={[{ id: "1", text: "Activity updates will appear here.", date: "Today" }]} />}
         <div className="mt-8 border-t border-border pt-4">{commentBox ?? <Textarea placeholder="Add a comment…" />}</div>
       </main>

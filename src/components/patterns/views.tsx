@@ -6,9 +6,11 @@ import { DndContext, useDroppable, type DragEndEvent } from "@dnd-kit/core";
 import { SortableContext, useSortable, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Input } from "@/components/ui/input";
+import { Counter } from "@/components/patterns/counter";
+import { StatusBadge } from "@/components/patterns/status-badge";
 
 export type BoardItem = { id: string; content: ReactNode };
-export type BoardColumn = { id: string; title: string; items: BoardItem[] };
+export type BoardColumn = { id: string; title: string; status?: string; items: BoardItem[] };
 
 function DraggableCard({ item }: { item: BoardItem }) {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useSortable({ id: item.id });
@@ -29,7 +31,10 @@ function BoardLane({ column }: { column: BoardColumn }) {
   const { isOver, setNodeRef } = useDroppable({ id: column.id });
   return (
     <section ref={setNodeRef} className={`min-h-36 rounded-md border border-border bg-card p-3 ${isOver ? "ring-2 ring-ring" : ""}`}>
-      <h3 className="mb-3 font-semibold">{column.title}</h3>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <h3 className="font-semibold">{column.status ? <StatusBadge status={column.status} /> : column.title}</h3>
+        <Counter value={column.items.length} />
+      </div>
       <SortableContext items={column.items.map((item) => item.id)} strategy={verticalListSortingStrategy}>
         <div className="min-h-20 space-y-2">{column.items.map((item) => <DraggableCard key={item.id} item={item} />)}</div>
       </SortableContext>

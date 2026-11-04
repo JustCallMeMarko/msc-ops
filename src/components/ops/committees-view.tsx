@@ -4,12 +4,14 @@ import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
+import { CheckIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { EmptyState } from "@/components/patterns/empty-state";
 import { RelativeDate } from "@/components/patterns/relative-date";
+import { StatusBadge } from "@/components/patterns/status-badge";
 import { toastUndo } from "@/components/patterns/toast-undo";
 import { apiFetch } from "@/lib/api-client";
 import { plural } from "@/lib/utils";
@@ -106,6 +108,7 @@ export function CommitteeDetailView({ slug }: { slug: string }) {
   const [members, setMembers] = useState<Array<{ id: string; name: string; role: string; contact: string; email: string | null }>>([]);
   const [tasks, setTasks] = useState<Array<{ id: string; number: number; title: string; status: string; dueAt: string | null }>>([]);
   const [newName, setNewName] = useState(""); const [newRole, setNewRole] = useState(""); const [newContact, setNewContact] = useState("");
+  const [savedMemberId, setSavedMemberId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const fetchData = useCallback(async () => {
     const listResponse = await fetch("/api/committees");
@@ -154,8 +157,10 @@ export function CommitteeDetailView({ slug }: { slug: string }) {
   }
   async function updateMember(memberId: string, values: Record<string, unknown>) {
     const response = await apiFetch(`/api/members/${memberId}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
-    if (!response.ok) toast.error("Could not update member.");
-    else await load();
+    if (!response.ok) { toast.error("Could not update member."); return; }
+    await load();
+    setSavedMemberId(memberId);
+    window.setTimeout(() => setSavedMemberId((current) => current === memberId ? null : current), 2200);
   }
   if (loading) return <div className="h-72 animate-pulse rounded bg-secondary" />;
   if (!committee) return <EmptyState title="Committee not found" teachingText="It may have been archived or the link may be incorrect." />;
@@ -167,9 +172,9 @@ export function CommitteeDetailView({ slug }: { slug: string }) {
         <label className="block space-y-1 text-xs text-muted-foreground">Committee head<Select value={committee.headMemberId ?? "none"} onValueChange={(value) => void updateCommittee({ headMemberId: value === "none" ? null : value })}><SelectTrigger><span>{members.find((member) => member.id === committee.headMemberId)?.name ?? "No head selected"}</span></SelectTrigger><SelectContent><SelectItem value="none">No head selected</SelectItem>{members.map((member) => <SelectItem key={member.id} value={member.id}>{member.name}</SelectItem>)}</SelectContent></Select></label>
       </div>
     </section>
-    <section className="space-y-3"><h2 className="font-semibold">Members</h2><div className="overflow-x-auto rounded-md border border-border"><table className="w-full text-left text-sm"><thead className="bg-card text-xs uppercase text-muted-foreground"><tr>{["Name", "Role", "Contact", "Actions"].map((item) => <th key={item} className="p-3">{item}</th>)}</tr></thead><tbody>{members.map((member) => <tr key={member.id} className="border-t border-border"><td className="p-2"><Input defaultValue={member.name} onBlur={(event) => event.target.value !== member.name && void updateMember(member.id, { name: event.target.value })} /></td><td className="p-2"><Input defaultValue={member.role} onBlur={(event) => event.target.value !== member.role && void updateMember(member.id, { role: event.target.value })} /></td><td className="p-2"><Input defaultValue={member.contact} onBlur={(event) => event.target.value !== member.contact && void updateMember(member.id, { contact: event.target.value })} /></td><td className="p-2"><Button size="sm" variant="ghost" onClick={async () => { const response = await apiFetch(`/api/members/${member.id}`, { method: "DELETE" }); if (response.ok) { await load(); toastUndo(`${member.name} removed.`, () => { void apiFetch(`/api/members/${member.id}/restore`, { method: "POST" }).then(load); }); } }}>Remove</Button></td></tr>)}</tbody></table></div>
+    <section className="space-y-3"><h2 className="font-semibold">Members</h2><div className="overflow-x-auto rounded-md border border-border"><table className="w-full text-left text-sm"><thead className="bg-card text-xs uppercase text-muted-foreground"><tr>{["Name", "Role", "Contact", "Actions"].map((item) => <th key={item} className="p-3">{item}</th>)}</tr></thead><tbody>{members.map((member) => <tr key={member.id} className="border-t border-border"><td className="p-2"><Input defaultValue={member.name} onBlur={(event) => event.target.value !== member.name && void updateMember(member.id, { name: event.target.value })} /></td><td className="p-2"><Input defaultValue={member.role} onBlur={(event) => event.target.value !== member.role && void updateMember(member.id, { role: event.target.value })} /></td><td className="p-2"><Input defaultValue={member.contact} onBlur={(event) => event.target.value !== member.contact && void updateMember(member.id, { contact: event.target.value })} /></td><td className="p-2"><div className="flex items-center gap-2">{savedMemberId === member.id && <span className="inline-flex items-center gap-1 text-xs text-muted-foreground"><CheckIcon size={13} />Saved</span>}<Button size="sm" variant="ghost" onClick={async () => { const response = await apiFetch(`/api/members/${member.id}`, { method: "DELETE" }); if (response.ok) { await load(); toastUndo(`${member.name} removed.`, () => { void apiFetch(`/api/members/${member.id}/restore`, { method: "POST" }).then(load); }); } }}>Remove</Button></div></td></tr>)}</tbody></table></div>
       <form onSubmit={(event) => void addMember(event)} className="grid gap-2 md:grid-cols-4"><Input placeholder="Member name" value={newName} onChange={(event) => setNewName(event.target.value)} /><Input placeholder="Role" value={newRole} onChange={(event) => setNewRole(event.target.value)} /><Input placeholder="Contact / handle" value={newContact} onChange={(event) => setNewContact(event.target.value)} /><Button disabled={!newName.trim()}>Add member</Button></form>
     </section>
-    <section><h2 className="mb-3 font-semibold">Tasks</h2><div className="divide-y divide-border rounded-md border border-border bg-card">{tasks.map((task) => <Link key={task.id} href={`/tasks/${task.number}`} className="flex items-center gap-3 p-3 hover:bg-secondary"><span className="mono text-xs text-muted-foreground">#{task.number}</span><span className="flex-1">{task.title}</span><span className="text-xs text-muted-foreground">{task.status.replace("_", " ")}</span>{task.dueAt && <RelativeDate date={task.dueAt} />}</Link>)}{!tasks.length && <p className="p-4 text-sm text-muted-foreground">No tasks for this committee.</p>}</div></section>
+    <section><h2 className="mb-3 font-semibold">Tasks</h2><div className="divide-y divide-border rounded-md border border-border bg-card">{tasks.map((task) => <Link key={task.id} href={`/tasks/${task.number}`} className="flex items-center gap-3 p-3 hover:bg-secondary"><span className="mono text-xs text-muted-foreground">#{task.number}</span><span className="flex-1">{task.title}</span><StatusBadge status={task.status} />{task.dueAt && <RelativeDate date={task.dueAt} />}</Link>)}{!tasks.length && <p className="p-4 text-sm text-muted-foreground">No tasks for this committee.</p>}</div></section>
   </div>;
 }

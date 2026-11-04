@@ -89,7 +89,18 @@ describe("nudge and digest messages", () => {
       { number: 1, title: "Collect receipts", status: "todo", dueAt: date("2025-11-09T01:00:00.000Z") },
     ], now);
     expect(message.indexOf("#1")).toBeLessThan(message.indexOf("#2"));
-    expect(message).toContain("⚠ overdue");
+    expect(message).toContain("(⚠ overdue 1d)");
+  });
+
+  it("uses today and tomorrow wording for near deadlines", () => {
+    const message = buildDigest({ name: "Finance" }, [
+      { number: 1, title: "Today's update", status: "todo", dueAt: date("2025-11-09T20:00:00.000Z") },
+      { number: 2, title: "Tomorrow's update", status: "todo", dueAt: date("2025-11-10T20:00:00.000Z") },
+      { number: 3, title: "Late update", status: "todo", dueAt: date("2025-11-07T20:00:00.000Z") },
+    ], now);
+    expect(message).toContain("(today)");
+    expect(message).toContain("(tomorrow)");
+    expect(message).toContain("(⚠ overdue 2d)");
   });
 
   it("has a festive empty digest", () => {

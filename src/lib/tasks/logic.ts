@@ -116,11 +116,12 @@ export function buildDigest(committee: NudgeCommittee, tasks: DigestTask[], now:
   if (!open.length) return "No open tasks 🎉";
   const greeting = `Good morning, ${committee?.name ?? "team"}!`;
   const lines = open.map((task) => {
-    const isOverdue = Boolean(task.dueAt && isBefore(task.dueAt, now));
     const due = task.dueAt ? `due ${format(manilaDate(task.dueAt), "EEE MMM d")}` : "no deadline";
-    const left = task.dueAt
-      ? ` (${isOverdue ? "⚠ overdue" : `in ${differenceInCalendarDays(manilaDate(task.dueAt), manilaDate(now))}d`})`
-      : "";
+    const daysLeft = task.dueAt ? differenceInCalendarDays(manilaDate(task.dueAt), manilaDate(now)) : null;
+    const timing = daysLeft === null ? "" : daysLeft < 0
+      ? `⚠ overdue ${Math.abs(daysLeft)}d`
+      : daysLeft === 0 ? "today" : daysLeft === 1 ? "tomorrow" : `in ${daysLeft}d`;
+    const left = timing ? ` (${timing})` : "";
     const assignee = task.assignee?.name ? ` — @${task.assignee.name}` : "";
     return `• #${task.number} ${task.title} — ${due}${left}${assignee}`;
   });

@@ -4,10 +4,10 @@ import { useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import Link from "next/link";
-import { CheckboxIcon, IssueOpenedIcon } from "@primer/octicons-react";
 import { Counter } from "@/components/patterns/counter";
 import { Label } from "@/components/patterns/label";
 import { RelativeDate } from "@/components/patterns/relative-date";
+import { StatusBadge } from "@/components/patterns/status-badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { plural } from "@/lib/utils";
 
@@ -19,6 +19,7 @@ export type ListItem = {
   comments?: number;
   assignee?: string;
   closed?: boolean;
+  status?: string;
   href?: string;
 };
 
@@ -26,11 +27,11 @@ function ItemRow({ item, selected, onToggle }: { item: ListItem; selected: boole
   return (
     <div className="flex min-h-14 items-center gap-3 border-b border-border px-4">
       <Checkbox aria-label={`Select ${item.title}`} checked={selected} onCheckedChange={onToggle} />
-      {item.closed ? <CheckboxIcon size={16} className="text-done" /> : <IssueOpenedIcon size={16} className="text-success" />}
       <div className="min-w-0 flex-1">
         {item.href ? <Link href={item.href} className="truncate font-medium hover:text-primary">{item.title}</Link> : <div className="truncate font-medium">{item.title}</div>}
         {item.labels?.length ? <div className="mt-1 flex gap-1">{item.labels.map((label) => <Label key={label}>{label}</Label>)}</div> : null}
       </div>
+      {item.status && <StatusBadge status={item.status} />}
       {item.due && <RelativeDate date={item.due} />}
       {item.assignee && <span aria-label={`Assigned to ${item.assignee}`} title={item.assignee} className="flex size-7 items-center justify-center rounded-full bg-secondary text-xs font-medium">{item.assignee.split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>}
       {item.comments !== undefined && <Counter value={item.comments} />}

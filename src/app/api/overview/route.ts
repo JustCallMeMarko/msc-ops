@@ -1,5 +1,5 @@
 import { TZDate } from "@date-fns/tz";
-import { differenceInCalendarDays, format, startOfMonth } from "date-fns";
+import { format, startOfMonth, startOfWeek } from "date-fns";
 import { inArray, isNull } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { now } from "@/lib/clock";
@@ -19,15 +19,16 @@ export async function GET() {
   const activities = await db.select().from(taskActivity)
     .where(inArray(taskActivity.kind, ["checkin_reply", "nudge_copied"]))
     .orderBy(taskActivity.at);
+  const weekStart = startOfWeek(new TZDate(currentTime, MANILA_TIME_ZONE), { weekStartsOn: 1 });
+  const firstDay = new TZDate(weekStart, MANILA_TIME_ZONE);
+  firstDay.setDate(firstDay.getDate() - 77);
+  firstDay.setHours(0, 0, 0, 0);
   const days = Array.from({ length: 84 }, (_, index) => {
-    const date = new TZDate(currentTime, MANILA_TIME_ZONE);
-    date.setDate(date.getDate() - (83 - index));
+    const date = new TZDate(firstDay, MANILA_TIME_ZONE);
+    date.setDate(date.getDate() + index);
     return { date: format(date, "yyyy-MM-dd"), count: 0 };
   });
-  const windowStart = new TZDate(currentTime, MANILA_TIME_ZONE);
-  windowStart.setDate(windowStart.getDate() - 83);
-  windowStart.setHours(0, 0, 0, 0);
-  const recentReplies = activities.filter((activity) => activity.kind === "checkin_reply" && activity.at >= windowStart);
+  const recentReplies = activities.filter((activity) => activity.kind === "checkin_reply" && activity.at >= firstDay);
   const result = committeeRows.map((committee) => {
     const ownTasks = taskRows.filter((task) => task.committeeId === committee.id);
     const done = ownTasks.filter((task) => task.status === "done" && task.completedAt && task.completedAt >= monthStart).length;
@@ -46,10 +47,7 @@ export async function GET() {
       if (!taskIds.has(activity.taskId)) continue;
       if (activity.kind === "nudge_copied") nudges.set(activity.taskId, activity.at);
       else if (activity.kind === "checkin_reply" && nudges.has(activity.taskId)) {
-        replyDurations.push(differenceInCalendarDays(
-          new TZDate(activity.at, MANILA_TIME_ZONE),
-          new TZDate(nudges.get(activity.taskId)!, MANILA_TIME_ZONE),
-        ));
+        replyDurations.push(Math.max(0, activity.at.getTime() - nudges.get(activity.taskId)!.getTime()) / 86_400_000);
         nudges.delete(activity.taskId);
       }
     }
@@ -59,7 +57,7 @@ export async function GET() {
         open: ownTasks.filter((task) => task.status !== "done" && task.status !== "cancelled").length,
         overdue: ownTasks.filter((task) => task.dueAt && task.dueAt < currentTime && task.status !== "done" && task.status !== "cancelled").length,
         doneThisMonth: done,
-        onTimeRate: completedWithDue.length ? Math.round((onTime / completedWithDue.length) * 100) : 0,
+        onTimeRate: completedWithDue.length ? Math.round((onTime / completedWithDue.length) * 100) : null,
       },
       heatmap: daily,
       averageReplyDays: replyDurations.length
