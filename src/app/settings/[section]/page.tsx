@@ -3,7 +3,7 @@ import { SettingsContent } from "@/components/settings/settings-content";
 import { WorkspaceShell } from "@/components/shell/workspace-shell";
 import { getDataDir } from "@/lib/data-dir";
 
-const allowed = new Set(["general", "ai", "privacy", "about"]);
+const allowed = new Set(["general", "ai", "privacy", "about", "deadlines"]);
 
 export default async function SettingsSectionPage({ params }: { params: Promise<{ section: string }> }) {
   const { section } = await params;

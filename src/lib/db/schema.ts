@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, date, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
 import { uuidv7 } from "uuidv7";
 import { commonColumns } from "./columns";
 
@@ -58,6 +58,74 @@ export const members = pgTable("members", {
   email: text("email"), // pii
 });
 
+export const events = pgTable("events", {
+  ...commonColumns,
+  name: text("name").notNull(),
+  slug: text("slug").notNull(),
+  type: text("type").notNull(),
+  startsAt: timestamp("starts_at", { withTimezone: true }).notNull(),
+  endsAt: timestamp("ends_at", { withTimezone: true }).notNull(),
+  venue: text("venue").notNull().default(""),
+  description: text("description").notNull().default(""),
+  lumaUrl: text("luma_url"),
+  participantTarget: integer("participant_target").notNull().default(0),
+  participantActual: integer("participant_actual").notNull().default(0),
+  approvalStatus: text("approval_status").notNull().default("draft"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  hasFees: boolean("has_fees").notNull().default(false),
+  hasExternalGuests: boolean("has_external_guests").notNull().default(false),
+  isMajor: boolean("is_major").notNull().default(false),
+}, (table) => [
+  uniqueIndex("events_slug_unique").on(table.slug),
+  check("events_type_check", sql`${table.type} in ('on_campus', 'off_campus', 'online', 'booth')`),
+  check("events_approval_status_check", sql`${table.approvalStatus} in ('draft', 'submitted', 'approved', 'rejected', 'cancelled')`),
+  check("events_participants_check", sql`${table.participantTarget} >= 0 and ${table.participantActual} >= 0`),
+]);
+
+export const deadlineRules = pgTable("deadline_rules", {
+  ...commonColumns,
+  key: text("key").notNull(),
+  label: text("label").notNull(),
+  offsetDays: integer("offset_days").notNull(),
+  dayType: text("day_type").notNull().default("calendar"),
+  anchor: text("anchor").notNull().default("event_start"),
+  source: text("source").notNull(),
+}, (table) => [
+  uniqueIndex("deadline_rules_key_unique").on(table.key),
+  check("deadline_rules_day_type_check", sql`${table.dayType} in ('calendar', 'working')`),
+  check("deadline_rules_anchor_check", sql`${table.anchor} in ('event_start', 'event_end')`),
+]);
+
+export const holidays = pgTable("holidays", {
+  ...commonColumns,
+  date: date("date", { mode: "string" }).notNull(),
+  name: text("name").notNull(),
+  kind: text("kind").notNull(),
+}, (table) => [
+  uniqueIndex("holidays_date_unique").on(table.date),
+  check("holidays_kind_check", sql`${table.kind} in ('regular', 'special')`),
+]);
+
+export const checklistItems = pgTable("checklist_items", {
+  ...commonColumns,
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  phase: text("phase").notNull(),
+  title: text("title").notNull(),
+  detail: text("detail").notNull().default(""),
+  ruleKey: text("rule_key"),
+  dueAt: timestamp("due_at", { withTimezone: true }).notNull(),
+  dueOverridden: boolean("due_overridden").notNull().default(false),
+  late: boolean("late").notNull().default(false),
+  status: text("status").notNull().default("open"),
+  source: text("source").notNull().default(""),
+  sort: integer("sort").notNull().default(0),
+  taskId: uuid("task_id").references(() => tasks.id, { onDelete: "set null" }),
+}, (table) => [
+  index("checklist_items_event_phase_idx").on(table.eventId, table.phase, table.sort),
+  check("checklist_items_phase_check", sql`${table.phase} in ('pre', 'during', 'post')`),
+  check("checklist_items_status_check", sql`${table.status} in ('open', 'done', 'na')`),
+]);
+
 export const tasks = pgTable("tasks", {
   ...commonColumns,
   number: serial("number").notNull().unique(),
@@ -71,7 +139,7 @@ export const tasks = pgTable("tasks", {
   labels: text("labels").array().notNull().default(sql`'{}'::text[]`),
   dueAt: timestamp("due_at", { withTimezone: true }),
   dueRule: text("due_rule"),
-  eventId: uuid("event_id"),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
   checkinEveryDays: integer("checkin_every_days"),
   nextCheckinAt: timestamp("next_checkin_at", { withTimezone: true }),
   lastCheckinAt: timestamp("last_checkin_at", { withTimezone: true }),
@@ -95,4 +163,54 @@ export const taskActivity = pgTable("task_activity", {
   check("task_activity_kind_check", sql`${table.kind} in ('comment', 'checkin_reply', 'nudge_copied', 'status_change', 'field_change', 'snooze', 'created')`),
 ]);
 
-export const schema = { appMeta, settings, providers, networkLog, committees, members, tasks, taskActivity };
+export const attendees = pgTable("attendees", {
+  ...commonColumns,
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  name: text("name").notNull().default(""), // pii
+  email: text("email"), // pii
+  checkedIn: boolean("checked_in").notNull().default(false),
+  source: text("source").notNull().default("manual"),
+}, (table) => [
+  uniqueIndex("attendees_event_email_unique").on(table.eventId, sql`lower(${table.email})`).where(sql`${table.email} is not null`),
+  check("attendees_source_check", sql`${table.source} in ('luma_csv', 'manual')`),
+]);
+
+export const announcementTemplates = pgTable("announcement_templates", {
+  ...commonColumns,
+  key: text("key").notNull(),
+  name: text("name").notNull(),
+  body: text("body").notNull(),
+}, (table) => [uniqueIndex("announcement_templates_key_unique").on(table.key)]);
+
+export const files = pgTable("files", {
+  ...commonColumns,
+  sha256: text("sha256").notNull(),
+  originalName: text("original_name").notNull(),
+  mime: text("mime").notNull(),
+  size: integer("size").notNull(),
+  kind: text("kind").notNull().default("other"),
+  source: text("source"),
+  tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+  versionOf: uuid("version_of"),
+  version: integer("version").notNull().default(1),
+  caption: text("caption"),
+}, (table) => [
+  index("files_sha256_idx").on(table.sha256),
+  check("files_kind_check", sql`${table.kind} in ('manual', 'cbl', 'template', 'generated', 'receipt', 'creative', 'event_photo', 'import', 'other')`),
+  check("files_source_check", sql`${table.source} is null or ${table.source} in ('sdao', 'scoa', 'org', 'other')`),
+]);
+
+export const fileLinks = pgTable("file_links", {
+  ...commonColumns,
+  fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "cascade" }),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  role: text("role").notNull().default("attachment"),
+}, (table) => [
+  uniqueIndex("file_links_unique").on(table.fileId, table.entityType, table.entityId, table.role),
+]);
+
+export const schema = {
+  appMeta, settings, providers, networkLog, committees, members, events, deadlineRules, holidays,
+  tasks, taskActivity, checklistItems, attendees, announcementTemplates, files, fileLinks,
+};

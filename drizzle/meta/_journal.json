@@ -15,6 +15,13 @@
       "when": 1793829933519,
       "tag": "0001_milky_night_nurse",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793832284380,
+      "tag": "0002_short_proudstar",
+      "breakpoints": true
     }
   ]
 }

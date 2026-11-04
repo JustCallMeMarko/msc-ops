@@ -17,6 +17,7 @@ import { apiFetch } from "@/lib/api-client";
 import { isLocalProviderUrl, PROVIDER_TYPES, type ProviderType } from "@/lib/ai/provider-types";
 import { plural } from "@/lib/utils";
 import { DEFAULT_NUDGE_TEMPLATE } from "@/lib/tasks/logic";
+import { DeadlinesContent } from "@/components/settings/deadlines-content";
 
 type Provider = {
   id: string; name: string; type: ProviderType; baseUrl: string; hasKey: boolean; keyLast4: string | null;
@@ -46,7 +47,7 @@ function isValidUrl(value: string): boolean {
 }
 
 const sections = [
-  ["general", "General"], ["ai", "AI"], ["privacy", "Privacy"], ["about", "About"],
+  ["general", "General"], ["deadlines", "Deadlines"], ["ai", "AI"], ["privacy", "Privacy"], ["about", "About"],
 ];
 
 export function SettingsContent({ section, dataDir }: { section: string; dataDir: string }) {
@@ -121,6 +122,7 @@ export function SettingsContent({ section, dataDir }: { section: string; dataDir
           network={network}
         />}
         {section === "about" && <AboutSection dataDir={dataDir} />}
+        {section === "deadlines" && <DeadlinesContent />}
         <section className="rounded-md border border-destructive/60 bg-card p-5">
           <h2 className="font-semibold text-destructive">Danger zone</h2>
           <p className="mt-1 text-sm text-muted-foreground">Reset and replace-all actions will be available in a later PR.</p>

@@ -6,6 +6,7 @@ import type { ReactNode } from "react";
 import { CommentDiscussionIcon } from "@primer/octicons-react";
 import { AppSidebar } from "@/components/shell/app-sidebar";
 import { CommandPalette } from "@/components/shell/command-palette";
+import { GlobalUploadTray } from "@/components/shell/global-upload-tray";
 import { Topbar } from "@/components/shell/topbar";
 
 function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; breadcrumbLabel?: string }) {
@@ -71,6 +72,7 @@ function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; brea
           </section>
         </div>
       )}
+      <GlobalUploadTray />
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
     </div>
   );
