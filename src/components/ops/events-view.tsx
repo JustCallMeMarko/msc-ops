@@ -22,15 +22,15 @@ import { toastUndo } from "@/components/patterns/toast-undo";
 import { apiFetch } from "@/lib/api-client";
 import { now } from "@/lib/clock";
 import { MANILA_TIME_ZONE } from "@/lib/tasks/logic";
-import { APPROVAL_STATUS_LABELS, ATTENDEE_SOURCE_LABELS, EVENT_TYPE_LABELS, FILE_SOURCE_LABELS, enumLabel, fileKindLabel } from "@/lib/ui-labels";
+import { APPROVAL_STATUS_LABELS, ATTENDEE_SOURCE_LABELS, EVENT_TYPE_LABELS, FILE_SOURCE_LABELS, POST_STATUS_LABELS, POST_TYPE_LABELS, enumLabel, fileKindLabel } from "@/lib/ui-labels";
 
 type EventRow = { id: string; name: string; slug: string; type: string; startsAt: string; endsAt: string; venue: string; description: string; approvalStatus: string; lumaUrl: string | null; participantTarget: number; participantActual: number; hasFees: boolean; hasExternalGuests: boolean; isMajor: boolean; updatedAt: string; checklistProgress?: { done: number; total: number } };
 type Item = { id: string; phase: string; title: string; detail: string; source: string; ruleKey: string | null; dueAt: string; dueOverridden: boolean; late: boolean; status: string; taskId: string | null; taskNumber: number | null };
 type CommitteeOption = { id: string; name: string };
-type AuxiliaryRecord = { id: string; name?: string; email?: string | null; checkedIn?: boolean; source?: string | null; caption?: string | null; originalName?: string; kind?: string; size?: number };
+type AuxiliaryRecord = { id: string; name?: string; email?: string | null; checkedIn?: boolean; source?: string | null; caption?: string | null; originalName?: string; kind?: string; size?: number; title?: string; type?: string; status?: string; scheduledAt?: string | null };
 type ImportPreview = { rows: Array<{ name: string; email: string | null; checkedIn: boolean }>; skipped: number; warnings: string[] };
 type RuleOption = { key: string; offsetDays: number; anchor: string; source: string };
-const tabs = ["overview", "checklist", "announcements", "photos", "attendees", "files"];
+const tabs = ["overview", "checklist", "announcements", "photos", "attendees", "files", "posts"];
 const day = (v: string) => new Date(v).toLocaleDateString("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" });
 const time = (v: string) => new Date(v).toLocaleTimeString("en-PH", { timeZone: "Asia/Manila", hour: "numeric", minute: "2-digit" });
 const shortDay = (value: string) => new Intl.DateTimeFormat("en-PH", { timeZone: MANILA_TIME_ZONE, month: "short", day: "numeric" }).format(new Date(value));
@@ -216,7 +216,7 @@ export function EventDetailView({ slug }: { slug: string }) {
     if (checklistResponse.ok) setItems(await checklistResponse.json());
     if (committeeResponse.ok) setCommittees(await committeeResponse.json());
     if (ruleResponse.ok) setRules(await ruleResponse.json());
-    const path = tab === "photos" ? `/api/events/${slug}/photos` : tab === "attendees" ? `/api/events/${slug}/attendees` : tab === "files" ? `/api/files?event=${slug}` : "";
+    const path = tab === "photos" ? `/api/events/${slug}/photos` : tab === "attendees" ? `/api/events/${slug}/attendees` : tab === "files" ? `/api/files?event=${slug}` : tab === "posts" ? `/api/posts?event=${slug}` : "";
     if (path) { const response = await fetch(path); if (response.ok) { const body = await response.json(); setRecords(tab === "files" ? body.files : body); } }
     if (tab === "announcements") {
       const [templateResponse, settingsResponse] = await Promise.all([fetch("/api/announcements/templates"), fetch("/api/settings")]);
@@ -324,5 +324,9 @@ export function EventDetailView({ slug }: { slug: string }) {
       <form className="flex flex-wrap gap-2" onSubmit={async (e) => { e.preventDefault(); const response = await apiFetch(`/api/events/${slug}/attendees`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(newAttendee) }); if (response.ok) { setNewAttendee({ name: "", email: "" }); await load(); } }}><Input placeholder="Name" value={newAttendee.name} onChange={(e) => setNewAttendee({ ...newAttendee, name: e.target.value })} /><Input placeholder="Email" value={newAttendee.email} onChange={(e) => setNewAttendee({ ...newAttendee, email: e.target.value })} /><Button>Add attendee</Button></form>
       <div className="divide-y divide-border rounded border border-border">{records.map((person) => <div key={person.id} className="flex items-center gap-3 p-3"><span className="flex-1">{person.name} <span className="text-xs text-muted-foreground">{person.email}</span><span className="ml-2 text-xs text-muted-foreground">{ATTENDEE_SOURCE_LABELS[person.source ?? "manual"] ?? enumLabel(person.source ?? "manual")}</span></span><Button size="sm" variant="outline" onClick={() => void apiFetch(`/api/events/${slug}/attendees/${person.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ checkedIn: !person.checkedIn }) }).then(load)}>{person.checkedIn ? "Checked in" : "Check in"}</Button><Button size="sm" variant="ghost" onClick={async () => { const response = await apiFetch(`/api/events/${slug}/attendees/${person.id}`, { method: "DELETE" }); if (response.ok) { await load(); toastUndo("Attendee removed.", () => { void apiFetch(`/api/events/${slug}/attendees/${person.id}/restore`, { method: "POST" }).then(load); }); } }}>Remove</Button></div>)}</div></section>}
     {tab === "files" && <div className="divide-y divide-border rounded border border-border bg-card">{records.map((file) => <Link key={file.id} href={`/api/files/${file.id}/content`} className="flex p-3 hover:bg-secondary">{file.originalName}<span className="ml-auto text-xs text-muted-foreground">{fileKindLabel(file.kind ?? "", file.source)}{file.source && ` · ${FILE_SOURCE_LABELS[file.source] ?? enumLabel(file.source)}`} · {Math.ceil((file.size ?? 0) / 1024)} KB</span></Link>)}</div>}
+    {tab === "posts" && <section className="space-y-3">
+      {!records.length ? <div className="rounded-md border border-dashed border-border bg-card p-6 text-center"><p className="text-sm text-muted-foreground">No posting schedule has been generated for this event.</p><Button className="mt-3" onClick={async () => { const response = await apiFetch(`/api/events/${slug}/posts/generate`, { method: "POST" }); if (response.ok) { await load(); toast.success("Posting schedule generated."); } else toast.error("Could not generate schedule."); }}>Generate posting schedule</Button></div>
+        : <div className="space-y-2">{records.slice().sort((a,b) => (a.scheduledAt ?? "").localeCompare(b.scheduledAt ?? "")).map((post) => <Link key={post.id} href={`/creatives/${post.id}`} className="flex flex-wrap items-center gap-3 rounded border border-border bg-card p-3 hover:border-primary/50"><span className="min-w-0 flex-1 font-medium">{post.title}</span><span className="text-xs text-muted-foreground">{POST_TYPE_LABELS[post.type ?? ""] ?? enumLabel(post.type ?? "")}</span><span className="rounded border border-border px-2 py-1 text-xs">{POST_STATUS_LABELS[post.status ?? ""] ?? enumLabel(post.status ?? "")}</span><span className="text-xs text-muted-foreground">{post.scheduledAt ? day(post.scheduledAt) : "Unscheduled"}</span></Link>)}</div>}
+    </section>}
   </div>;
 }

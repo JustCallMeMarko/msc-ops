@@ -7,6 +7,9 @@ import { checklistItems, events } from "@/lib/db/schema";
 import { generateChecklist, type EventRecord } from "@/lib/events/logic";
 import { eventHolidays, eventRules } from "@/lib/events/db-utils";
 import { lumaUrlSchema } from "@/lib/events/validation";
+import { getSetting } from "@/lib/settings";
+import { generatePostsForEvent } from "@/lib/creatives/database";
+import type { CreativeEvent } from "@/lib/creatives/logic";
 
 export const dynamic = "force-dynamic";
 
@@ -81,5 +84,6 @@ export async function POST(request: Request) {
   const [rules, holidays] = await Promise.all([eventRules(db), eventHolidays(db)]);
   const generated = generateChecklist(event as EventRecord, rules, holidays, currentTime);
   if (generated.length) await db.insert(checklistItems).values(generated.map((item) => ({ ...item, eventId: event.id })));
+  if (await getSetting("creatives.autoSchedule")) await generatePostsForEvent(db, event as CreativeEvent, currentTime);
   return NextResponse.json(event, { status: 201 });
 }

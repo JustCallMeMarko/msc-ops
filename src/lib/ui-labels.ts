@@ -47,3 +47,39 @@ export function fileKindLabel(kind: string, source?: string | null) {
 export function enumLabel(value: string) {
   return value.replaceAll("_", " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
+
+export const POST_TYPE_LABELS: Record<string, string> = {
+  poster: "Poster",
+  save_the_date: "Save the date",
+  registration_open: "Registration open",
+  speaker_reveal: "Speaker reveal",
+  countdown: "Countdown",
+  day_of: "Day of",
+  highlight: "Highlight",
+  thank_you: "Thank you",
+  reschedule_notice: "Reschedule notice",
+  general: "General",
+};
+
+export const POST_STATUS_LABELS: Record<string, string> = {
+  idea: "Idea",
+  drafting: "Drafting",
+  for_review: "For review",
+  approved: "Approved",
+  scheduled: "Scheduled",
+  posted: "Posted",
+  cancelled: "Cancelled",
+};
+
+export const POST_PLATFORM_LABELS: Record<string, string> = {
+  facebook: "Facebook",
+  instagram: "Instagram",
+  linkedin: "LinkedIn",
+  x: "X",
+  tiktok: "TikTok",
+};
+
+export const CAPTION_STATUS_LABELS: Record<string, string> = {
+  draft: "Draft",
+  approved: "Approved",
+};

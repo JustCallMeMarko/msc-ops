@@ -18,6 +18,8 @@ const EXTENSION_MIMES: Record<string, string> = {
   ".webp": "image/webp",
   ".gif": "image/gif",
   ".mp4": "video/mp4",
+  ".ttf": "font/ttf",
+  ".otf": "font/otf",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
@@ -125,6 +127,14 @@ export async function validateFileContent(
   originalName: string,
 ): Promise<{ bytes: Uint8Array; mime: string }> {
   const extension = extname(originalName).toLowerCase();
+  if (extension === ".ttf" || extension === ".otf") {
+    const signature = Buffer.from(input.subarray(0, 4)).toString("ascii");
+    const valid = extension === ".otf"
+      ? signature === "OTTO"
+      : signature === "\u0000\u0001\u0000\u0000" || signature === "true";
+    if (!valid) throw expectedTypeError(extension);
+    return { bytes: input, mime: extension === ".ttf" ? "font/ttf" : "font/otf" };
+  }
   if (extension === ".svg") {
     const text = decodeUtf8(input);
     if (!/<svg(?:\s|>)/i.test(text)) throw new FileValidationError("File content is not an SVG.");

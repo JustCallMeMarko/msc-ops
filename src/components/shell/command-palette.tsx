@@ -19,6 +19,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const { setTheme, theme } = useTheme();
   const [offline, setOffline] = useState(false);
   const [tasks, setTasks] = useState<Array<{ number: number; title: string }>>([]);
+  const [posts, setPosts] = useState<Array<{ id: string; title: string }>>([]);
 
   useEffect(() => {
     if (!open) return;
@@ -26,6 +27,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
       setOffline(Boolean(settings["privacy.offlineMode"]));
     }).catch(() => undefined);
     void fetch("/api/tasks").then((response) => response.json()).then((rows: Array<{ number: number; title: string }>) => setTasks(rows)).catch(() => setTasks([]));
+    void fetch("/api/posts").then((response) => response.json()).then((rows: Array<{ id: string; title: string }>) => setPosts(rows)).catch(() => setPosts([]));
   }, [open]);
 
   useEffect(() => {
@@ -56,11 +58,14 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
               </Command.Item>
             ))}
             {tasks.map((task) => <Command.Item key={task.number} value={`go to task #${task.number} ${task.title}`} onSelect={() => { router.push(`/tasks/${task.number}`); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Go to #{task.number} · {task.title}</Command.Item>)}
+            <Command.Item value="open content calendar" onSelect={() => { router.push("/creatives?view=calendar"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Open content calendar</Command.Item>
+            {posts.map((post) => <Command.Item key={post.id} value={`go to post ${post.title}`} onSelect={() => { router.push(`/creatives/${post.id}`); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Go to post · {post.title}</Command.Item>)}
           </Command.Group>
           <Command.Group heading="Actions" className="px-2 py-1 text-xs text-muted-foreground">
             <Command.Item value="new task" onSelect={() => { router.push("/tasks?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New task</Command.Item>
             <Command.Item value="new committee" onSelect={() => { router.push("/committees?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New committee</Command.Item>
             <Command.Item value="new event" onSelect={() => { router.push("/events?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New event</Command.Item>
+            <Command.Item value="new post" onSelect={() => { router.push("/creatives?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New post</Command.Item>
             <Command.Item value="upload file" onSelect={() => { router.push("/files?upload=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Upload file</Command.Item>
             <Command.Item value="copy all digests" onSelect={() => {
               void fetch("/api/digest").then((response) => response.json()).then(async (rows: Array<{ committee: { name: string }; digest: string }>) => {

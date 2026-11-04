@@ -210,7 +210,107 @@ export const fileLinks = pgTable("file_links", {
   uniqueIndex("file_links_unique").on(table.fileId, table.entityType, table.entityId, table.role),
 ]);
 
+export const posts = pgTable("posts", {
+  ...commonColumns,
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  title: text("title").notNull(),
+  type: text("type").notNull(),
+  status: text("status").notNull().default("idea"),
+  scheduledAt: timestamp("scheduled_at", { withTimezone: true }),
+  platforms: text("platforms").array().notNull().default(sql`'{}'::text[]`),
+  artistMemberId: uuid("artist_member_id").references(() => members.id, { onDelete: "set null" }),
+  writerMemberId: uuid("writer_member_id").references(() => members.id, { onDelete: "set null" }),
+  reviewerMemberId: uuid("reviewer_member_id").references(() => members.id, { onDelete: "set null" }),
+  brandChecked: boolean("brand_checked").notNull().default(false),
+  artworkTaskId: uuid("artwork_task_id").references(() => tasks.id, { onDelete: "set null" }),
+  captionTaskId: uuid("caption_task_id").references(() => tasks.id, { onDelete: "set null" }),
+  ruleKey: text("rule_key"),
+  scheduleOverridden: boolean("schedule_overridden").notNull().default(false),
+  postedAt: timestamp("posted_at", { withTimezone: true }),
+  postUrls: jsonb("post_urls").notNull().default({}),
+  analytics: jsonb("analytics").notNull().default({}),
+}, (table) => [
+  index("posts_event_scheduled_idx").on(table.eventId, table.scheduledAt),
+  check("posts_type_check", sql`${table.type} in ('poster', 'save_the_date', 'registration_open', 'speaker_reveal', 'countdown', 'day_of', 'highlight', 'thank_you', 'reschedule_notice', 'general')`),
+  check("posts_status_check", sql`${table.status} in ('idea', 'drafting', 'for_review', 'approved', 'scheduled', 'posted', 'cancelled')`),
+  check("posts_platforms_check", sql`${table.platforms} <@ array['facebook', 'instagram', 'linkedin', 'x', 'tiktok']::text[]`),
+]);
+
+export const postingRules = pgTable("posting_rules", {
+  ...commonColumns,
+  key: text("key").notNull(),
+  postType: text("post_type").notNull(),
+  label: text("label").notNull(),
+  offsetDays: integer("offset_days").notNull(),
+  anchor: text("anchor").notNull().default("event_start"),
+  enabled: boolean("enabled").notNull().default(true),
+}, (table) => [
+  uniqueIndex("posting_rules_key_unique").on(table.key),
+  check("posting_rules_anchor_check", sql`${table.anchor} in ('event_start', 'event_end')`),
+]);
+
+export const postAssets = pgTable("post_assets", {
+  ...commonColumns,
+  postId: uuid("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "cascade" }),
+  version: integer("version").notNull().default(1),
+  slideIndex: integer("slide_index").notNull().default(0),
+  width: integer("width"),
+  height: integer("height"),
+  durationSec: integer("duration_sec"),
+  note: text("note").notNull().default(""),
+  isFinal: boolean("is_final").notNull().default(false),
+}, (table) => [
+  index("post_assets_post_version_idx").on(table.postId, table.version, table.slideIndex),
+]);
+
+export const captions = pgTable("captions", {
+  ...commonColumns,
+  postId: uuid("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  platform: text("platform").notNull().default("base"),
+  body: text("body").notNull().default(""),
+  version: integer("version").notNull().default(1),
+  status: text("status").notNull().default("draft"),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+}, (table) => [
+  index("captions_post_platform_version_idx").on(table.postId, table.platform, table.version),
+  check("captions_platform_check", sql`${table.platform} in ('base', 'facebook', 'instagram', 'linkedin', 'x', 'tiktok')`),
+  check("captions_status_check", sql`${table.status} in ('draft', 'approved')`),
+]);
+
+export const captionTemplates = pgTable("caption_templates", {
+  ...commonColumns,
+  postType: text("post_type").notNull(),
+  name: text("name").notNull(),
+  body: text("body").notNull(),
+}, (table) => [uniqueIndex("caption_templates_type_name_unique").on(table.postType, table.name)]);
+
+export const hashtagSets = pgTable("hashtag_sets", {
+  ...commonColumns,
+  name: text("name").notNull(),
+  tags: text("tags").array().notNull().default(sql`'{}'::text[]`),
+}, (table) => [uniqueIndex("hashtag_sets_name_unique").on(table.name)]);
+
+export const mentionLists = pgTable("mention_lists", {
+  ...commonColumns,
+  name: text("name").notNull(),
+  handles: text("handles").array().notNull().default(sql`'{}'::text[]`),
+}, (table) => [uniqueIndex("mention_lists_name_unique").on(table.name)]);
+
+export const postActivity = pgTable("post_activity", {
+  ...commonColumns,
+  postId: uuid("post_id").notNull().references(() => posts.id, { onDelete: "cascade" }),
+  kind: text("kind").notNull(),
+  body: text("body").notNull().default(""),
+  meta: jsonb("meta").notNull().default({}),
+  at: timestamp("at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  index("post_activity_post_at_idx").on(table.postId, table.at),
+  check("post_activity_kind_check", sql`${table.kind} in ('comment', 'status_change', 'asset_upload', 'caption_approved')`),
+]);
+
 export const schema = {
   appMeta, settings, providers, networkLog, committees, members, events, deadlineRules, holidays,
   tasks, taskActivity, checklistItems, attendees, announcementTemplates, files, fileLinks,
+  posts, postingRules, postAssets, captions, captionTemplates, hashtagSets, mentionLists, postActivity,
 };

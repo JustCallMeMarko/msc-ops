@@ -1,10 +1,10 @@
 import { addDays, differenceInCalendarDays, isSameDay } from "date-fns";
 import { TZDate } from "@date-fns/tz";
-import { and, eq, isNull, lte, notInArray } from "drizzle-orm";
+import { and, eq, gte, inArray, isNull, lte, notInArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { now } from "@/lib/clock";
 import { getDb } from "@/lib/db/client";
-import { checklistItems, events, tasks } from "@/lib/db/schema";
+import { captions, checklistItems, events, posts, tasks } from "@/lib/db/schema";
 import { lateParWarning } from "@/lib/events/logic";
 import { MANILA_TIME_ZONE, taskState } from "@/lib/tasks/logic";
 import { listTaskRows } from "@/lib/tasks/route-utils";
@@ -12,14 +12,14 @@ import { plural } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const groups = ["checkin_due", "overdue", "due_today", "due_this_week", "event_deadlines", "late_par"] as const;
+const groups = ["checkin_due", "overdue", "due_today", "due_this_week", "event_deadlines", "late_par", "posts_due"] as const;
 
 export async function GET() {
   const currentTime = now();
   const { db } = await getDb();
   const rows = await listTaskRows(db, and(isNull(tasks.deletedAt), notInArray(tasks.status, ["done", "cancelled"])));
   const output: Record<(typeof groups)[number], unknown[]> = {
-    checkin_due: [], overdue: [], due_today: [], due_this_week: [], event_deadlines: [], late_par: [],
+    checkin_due: [], overdue: [], due_today: [], due_this_week: [], event_deadlines: [], late_par: [], posts_due: [],
   };
   for (const { task, committee, assignee } of rows) {
     const state = taskState(task, currentTime);
@@ -64,5 +64,26 @@ export async function GET() {
     ...event,
     checklistItem: event.checklistItems.find((item) => item.ruleKey === "par"),
   }));
+  const dayStart = new TZDate(currentTime, MANILA_TIME_ZONE);
+  dayStart.setHours(0, 0, 0, 0);
+  const dayEnd = addDays(dayStart, 1);
+  const duePosts = await db.select({ post: posts, event: events }).from(posts)
+    .leftJoin(events, eq(events.id, posts.eventId))
+    .where(and(
+      isNull(posts.deletedAt), notInArray(posts.status, ["posted", "cancelled"]),
+      gte(posts.scheduledAt, new Date(dayStart)), lte(posts.scheduledAt, new Date(dayEnd)),
+    ));
+  const duePostCaptions = duePosts.length
+    ? await db.select().from(captions).where(and(
+      isNull(captions.deletedAt),
+      inArray(captions.postId, duePosts.map(({ post }) => post.id)),
+    )).orderBy(captions.version)
+    : [];
+  output.posts_due = duePosts.map(({ post, event }) => {
+    const rows = duePostCaptions.filter((caption) => caption.postId === post.id);
+    const base = rows.filter((caption) => caption.platform === "base").at(-1);
+    const firstPlatform = rows.filter((caption) => post.platforms.includes(caption.platform)).at(-1);
+    return { ...post, event, caption: base?.body ?? firstPlatform?.body ?? "" };
+  });
   return NextResponse.json(output);
 }
