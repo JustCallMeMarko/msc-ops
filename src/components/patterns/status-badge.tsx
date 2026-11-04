@@ -17,6 +17,8 @@ export const STATUS_LABELS: Record<TaskStatus, string> = {
   cancelled: "Cancelled",
 };
 
+export const PRIORITY_LABELS = { low: "Low", normal: "Normal", high: "High", urgent: "Urgent" } as const;
+
 const statusColors: Record<TaskStatus, "gray" | "blue" | "yellow" | "green"> = {
   todo: "gray",
   in_progress: "blue",
@@ -35,6 +37,10 @@ const statusIcons = {
 
 export function statusLabel(status: string): string {
   return STATUS_LABELS[status as TaskStatus] ?? status;
+}
+
+export function priorityLabel(priority: string): string {
+  return PRIORITY_LABELS[priority as keyof typeof PRIORITY_LABELS] ?? priority;
 }
 
 export function StatusBadge({ status }: { status: string }) {

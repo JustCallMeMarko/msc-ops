@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/patterns/empty-state";
 import { FilterBar } from "@/components/patterns/filter-bar";
 import { ListView, type ListItem } from "@/components/patterns/list-view";
 import { BoardView, CalendarView, EditableCell, TableView, type BoardColumn } from "@/components/patterns/views";
-import { STATUS_LABELS, StatusBadge, statusLabel } from "@/components/patterns/status-badge";
+import { priorityLabel, STATUS_LABELS, StatusBadge, statusLabel } from "@/components/patterns/status-badge";
 import { DatePicker } from "@/components/ui/date-picker";
 import { apiFetch } from "@/lib/api-client";
 
@@ -145,7 +145,7 @@ export function TasksView() {
   }
 
   const rows: ListItem[] = useMemo(() => tasks.map((task) => ({
-    id: task.id, title: `#${task.number} ${task.title}`, labels: [task.priority, ...(task.committee ? [task.committee.name] : []), ...task.labels],
+    id: task.id, title: `#${task.number} ${task.title}`, labels: [priorityLabel(task.priority), ...(task.committee ? [task.committee.name] : []), ...task.labels],
     due: task.dueAt ?? undefined, assignee: task.assignee?.name, closed: task.status === "done" || task.status === "cancelled", status: task.status,
     href: `/tasks/${task.number}`,
   })), [tasks]);
@@ -186,6 +186,6 @@ export function TasksView() {
         setTasks((current) => current.map((item) => item.id === id ? { ...item, status } : item));
         void patchTask(task, { status }).then(load).catch((error) => { toast.error(error.message); void load(); });
       }
-    }} /></div> : view === "table" ? <TableView><thead><tr className="bg-card text-xs uppercase text-muted-foreground">{["Task", "Status", "Priority", "Committee", "Assignee", "Due"].map((name) => <th key={name} className="p-3">{name}</th>)}</tr></thead><tbody>{visibleTasks.map((task) => <tr key={task.id} className="border-t border-border"><EditableCell value={`#${task.number} ${task.title}`} onSave={(value) => void patchTask(task, { title: value.replace(/^#\d+\s*/, "") }).then(load).catch((error) => toast.error(error.message))} /><td className="p-3"><StatusBadge status={task.status} /></td><td className="p-3">{task.priority}</td><td className="p-3">{task.committee?.name ?? "—"}</td><td className="p-3">{task.assignee?.name ?? "—"}</td><td className="p-3">{task.dueAt ? new Date(task.dueAt).toLocaleDateString() : "—"}</td></tr>)}</tbody></TableView> : <CalendarView items={visibleTasks.filter((task) => task.dueAt).map((task) => ({ id: task.id, date: task.dueAt!, title: `#${task.number} ${task.title}`, href: `/tasks/${task.number}` }))} />}
+    }} /></div> : view === "table" ? <TableView><thead><tr className="bg-card text-xs uppercase text-muted-foreground">{["Task", "Status", "Priority", "Committee", "Assignee", "Due"].map((name) => <th key={name} className="p-3">{name}</th>)}</tr></thead><tbody>{visibleTasks.map((task) => <tr key={task.id} className="border-t border-border"><EditableCell value={`#${task.number} ${task.title}`} onSave={(value) => void patchTask(task, { title: value.replace(/^#\d+\s*/, "") }).then(load).catch((error) => toast.error(error.message))} /><td className="p-3"><StatusBadge status={task.status} /></td><td className="p-3">{priorityLabel(task.priority)}</td><td className="p-3">{task.committee?.name ?? "—"}</td><td className="p-3">{task.assignee?.name ?? "—"}</td><td className="p-3">{task.dueAt ? new Date(task.dueAt).toLocaleDateString() : "—"}</td></tr>)}</tbody></TableView> : <CalendarView items={visibleTasks.filter((task) => task.dueAt).map((task) => ({ id: task.id, date: task.dueAt!, title: `#${task.number} ${task.title}`, href: `/tasks/${task.number}` }))} />}
   </div>;
 }

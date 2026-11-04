@@ -12,7 +12,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { Combobox } from "@/components/ui/combobox";
 import { DetailView } from "@/components/patterns/detail-view";
 import { RelativeDate } from "@/components/patterns/relative-date";
-import { STATUS_LABELS, StatusBadge, statusLabel } from "@/components/patterns/status-badge";
+import { priorityLabel, STATUS_LABELS, StatusBadge, statusLabel } from "@/components/patterns/status-badge";
 import { DatePicker } from "@/components/ui/date-picker";
 import { apiFetch } from "@/lib/api-client";
 
@@ -96,7 +96,7 @@ export function TaskDetailView({ number }: { number: string }) {
         <label className="block space-y-1 text-xs text-muted-foreground">Assignee<Combobox options={members.map((item) => ({ value: item.id, label: item.name }))} value={task.assigneeMemberId ?? ""} onChange={(value) => void update({ assigneeMemberId: value || null })} placeholder="Unassigned" /></label>
         <label className="block space-y-1 text-xs text-muted-foreground">Committee<Combobox options={committees.map((item) => ({ value: item.id, label: item.name }))} value={task.committeeId ?? ""} onChange={(value) => void update({ committeeId: value || null })} placeholder="No committee" /></label>
         <label className="block space-y-1 text-xs text-muted-foreground">Status<Select value={task.status} onValueChange={(status) => void update({ status })}><SelectTrigger><span>{statusLabel(task.status)}</span></SelectTrigger><SelectContent>{Object.keys(STATUS_LABELS).map((status) => <SelectItem key={status} value={status}>{statusLabel(status)}</SelectItem>)}</SelectContent></Select></label>
-        <label className="block space-y-1 text-xs text-muted-foreground">Priority<Select value={task.priority} onValueChange={(priority) => void update({ priority })}><SelectTrigger><span>{task.priority}</span></SelectTrigger><SelectContent>{["low", "normal", "high", "urgent"].map((priority) => <SelectItem key={priority} value={priority}>{priority}</SelectItem>)}</SelectContent></Select></label>
+        <label className="block space-y-1 text-xs text-muted-foreground">Priority<Select value={task.priority} onValueChange={(priority) => void update({ priority })}><SelectTrigger><span>{priorityLabel(task.priority)}</span></SelectTrigger><SelectContent>{["low", "normal", "high", "urgent"].map((priority) => <SelectItem key={priority} value={priority}>{priorityLabel(priority)}</SelectItem>)}</SelectContent></Select></label>
         <label className="block space-y-1 text-xs text-muted-foreground">Progress (%)<Input type="number" min={0} max={100} value={task.progress} onChange={(event) => setTask({ ...task, progress: Number(event.target.value) })} onBlur={() => void update({ progress: task.progress })} /></label>
         <label className="block space-y-1 text-xs text-muted-foreground">Due date<DatePicker value={task.dueAt ? new Date(task.dueAt) : null} onChange={(date) => void update({ dueAt: date?.toISOString() ?? null })} /></label>
         <label className="block space-y-1 text-xs text-muted-foreground">Check-in cadence (days)<Input type="number" min={1} value={task.checkinEveryDays ?? ""} placeholder="Committee default" onChange={(event) => setTask({ ...task, checkinEveryDays: event.target.value ? Number(event.target.value) : null })} onBlur={() => void update({ checkinEveryDays: task.checkinEveryDays })} /></label>
