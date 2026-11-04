@@ -7,6 +7,8 @@ import { CheckboxIcon, IssueOpenedIcon } from "@primer/octicons-react";
 import { Counter } from "@/components/patterns/counter";
 import { Label } from "@/components/patterns/label";
 import { RelativeDate } from "@/components/patterns/relative-date";
+import { Checkbox } from "@/components/ui/checkbox";
+import { plural } from "@/lib/utils";
 
 export type ListItem = {
   id: string;
@@ -21,7 +23,7 @@ export type ListItem = {
 function ItemRow({ item, selected, onToggle }: { item: ListItem; selected: boolean; onToggle: () => void }) {
   return (
     <div className="flex min-h-14 items-center gap-3 border-b border-border px-4">
-      <input aria-label={`Select ${item.title}`} type="checkbox" checked={selected} onChange={onToggle} />
+      <Checkbox aria-label={`Select ${item.title}`} checked={selected} onCheckedChange={onToggle} />
       {item.closed ? <CheckboxIcon size={16} className="text-done" /> : <IssueOpenedIcon size={16} className="text-success" />}
       <div className="min-w-0 flex-1">
         <div className="truncate font-medium">{item.title}</div>
@@ -60,8 +62,12 @@ export function ListView({ rows, bulkActions }: { rows: ListItem[]; bulkActions?
   return (
     <section className="overflow-hidden rounded-md border border-border">
       <header className="flex items-center gap-3 border-b border-border bg-card px-4 py-3">
-        <input aria-label="Select all" type="checkbox" checked={visibleRows.length > 0 && visibleRows.every((row) => selected.includes(row.id))} onChange={toggleAll} />
-        <span className="font-medium">{visibleRows.length} items</span>
+        <Checkbox
+          aria-label="Select all"
+          checked={visibleRows.length > 0 && visibleRows.every((row) => selected.includes(row.id)) ? true : visibleRows.some((row) => selected.includes(row.id)) ? "indeterminate" : false}
+          onCheckedChange={toggleAll}
+        />
+        <span className="font-medium">{plural(visibleRows.length, "item")}</span>
         {selected.length > 0 && bulkActions?.(selected)}
       </header>
       <nav className="flex gap-1 border-b border-border px-3 pt-2" aria-label="Issue status">

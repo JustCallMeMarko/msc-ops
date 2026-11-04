@@ -48,4 +48,31 @@ describe("safeFetch", () => {
     expect(entries.some((entry) => entry.blocked && entry.host === "provider.example")).toBe(true);
     expect(entries.find((entry) => entry.host === "127.0.0.1")?.path).toBe("/api/tags");
   });
+
+  it("blocks and logs a redirect to a non-allowlisted host", async () => {
+    const { db } = await getDb();
+    await db.insert(providerTable).values({ name: "Allowed provider", type: "openai", baseUrl: "https://provider.example/v1" });
+    invalidateProviderAllowlist();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, {
+      status: 302,
+      headers: { location: "https://blocked.example/redirected?token=secret" },
+    })));
+
+    await expect(safeFetch("https://provider.example/v1/models")).rejects.toBeInstanceOf(EgressBlockedError);
+    const entries = await db.select().from(networkLog);
+    expect(entries).toHaveLength(2);
+    expect(entries.find((entry) => entry.host === "provider.example")).toMatchObject({ status: 302, blocked: false });
+    expect(entries.find((entry) => entry.host === "blocked.example")).toMatchObject({ path: "/redirected", blocked: true });
+  });
+
+  it("honors an explicit redirect:error mode", async () => {
+    const { db } = await getDb();
+    await db.insert(providerTable).values({ name: "Allowed provider", type: "openai", baseUrl: "https://provider.example/v1" });
+    invalidateProviderAllowlist();
+    const fetchMock = vi.fn(async () => new Response(null, { status: 302, headers: { location: "/next" } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(safeFetch("https://provider.example/v1/models", { redirect: "error" })).rejects.toThrow(/redirect/i);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
 });

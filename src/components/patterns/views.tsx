@@ -3,6 +3,7 @@
 import { useId, useState, type ReactNode } from "react";
 import { CalendarIcon, ColumnsIcon, TableIcon } from "@primer/octicons-react";
 import { DndContext, useDraggable, useDroppable, type DragEndEvent } from "@dnd-kit/core";
+import { Input } from "@/components/ui/input";
 
 export type BoardItem = { id: string; content: ReactNode };
 export type BoardColumn = { id: string; title: string; items: BoardItem[] };
@@ -73,7 +74,7 @@ export function EditableCell({ value, onSave }: { value: string; onSave?: (value
   return (
     <td className="border-t border-border p-3">
       {editing
-        ? <input aria-label="Edit cell" autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={save} onKeyDown={(event) => { if (event.key === "Enter") save(); if (event.key === "Escape") { setDraft(value); setEditing(false); } }} className="w-full rounded border border-input bg-background px-2 py-1" />
+        ? <Input aria-label="Edit cell" autoFocus value={draft} onChange={(event) => setDraft(event.target.value)} onBlur={save} onKeyDown={(event) => { if (event.key === "Enter") save(); if (event.key === "Escape") { setDraft(value); setEditing(false); } }} className="h-8 px-2" />
         : <button type="button" className="min-h-6 text-left" onClick={() => setEditing(true)}>{value}</button>}
     </td>
   );

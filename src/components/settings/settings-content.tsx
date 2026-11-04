@@ -14,6 +14,7 @@ import { Label } from "@/components/patterns/label";
 import { toastUndo } from "@/components/patterns/toast-undo";
 import { apiFetch } from "@/lib/api-client";
 import { isLocalProviderUrl, PROVIDER_TYPES, type ProviderType } from "@/lib/ai/provider-types";
+import { plural } from "@/lib/utils";
 
 type Provider = {
   id: string; name: string; type: ProviderType; baseUrl: string; hasKey: boolean; keyLast4: string | null;
@@ -168,7 +169,10 @@ function GeneralSection({ value, onSave }: { value: SettingValues["org.profile"]
         </Select>
       </Field>
       <Field label="Logo"><Input type="file" accept="image/png,image/jpeg,image/webp" onChange={(event) => void handleLogo(event.target.files?.[0])} /></Field>
-      {form.logoDataUrl && <img src={form.logoDataUrl} alt="Organization logo preview" className="size-16 rounded border border-border object-contain" />}
+      {form.logoDataUrl && (
+        // eslint-disable-next-line @next/next/no-img-element -- Resized data URL preview; image optimization is intentionally disabled.
+        <img src={form.logoDataUrl} alt="Organization logo preview" className="size-16 rounded border border-border object-contain" />
+      )}
       <Button type="submit" disabled={saving || !form.name.trim() || !form.shortName.trim()}>{saving ? "Saving…" : "Save profile"}</Button>
     </form>
   );
@@ -224,7 +228,7 @@ function AiSection(props: {
       const result = await response.json() as { ok: boolean; models: { id: string; label: string }[]; error?: { message: string } };
       if (!result.ok) throw new Error(result.error?.message ?? "Provider test failed.");
       setModels((current) => ({ ...current, [provider.id]: result.models }));
-      toast.success(`Connected · ${result.models.length} models found.`);
+      toast.success(`Connected · ${plural(result.models.length, "model")} found.`);
     } catch (error) { toast.error(error instanceof Error ? error.message : "Provider test failed."); }
     setTesting(null);
   }
@@ -297,7 +301,7 @@ function AiSection(props: {
                   </div>
                 </div>
                 )}
-                {models[provider.id] && <p className="mt-2 flex items-center gap-1 text-sm text-success"><CheckCircleIcon size={14} />{models[provider.id].length} models: {models[provider.id].slice(0, 6).map((model) => model.label).join(", ")}</p>}
+                {models[provider.id] && <p className="mt-2 flex items-center gap-1 text-sm text-success"><CheckCircleIcon size={14} />{plural(models[provider.id].length, "model")}: {models[provider.id].slice(0, 6).map((model) => model.label).join(", ")}</p>}
               </article>
             );
           })}

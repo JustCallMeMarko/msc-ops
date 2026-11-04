@@ -6,8 +6,10 @@ import { SearchIcon, SidebarCollapseIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
 
 const labels: Record<string, string> = {
+  inbox: "Inbox", setup: "Setup", recovery: "Recovery", dev: "Dev", ui: "UI",
   overview: "Overview", tasks: "Tasks", events: "Events", creatives: "Creatives", finance: "Finance",
-  cbl: "CBL", files: "Files", templates: "Templates", chat: "Chat", manual: "Manual",
+  cbl: "CBL", files: "Files", templates: "Templates", chat: "Chat", manual: "Manual", ai: "AI",
+  general: "General", privacy: "Privacy", about: "About",
   compliance: "Compliance", settings: "Settings",
 };
 
@@ -21,7 +23,7 @@ export function Topbar({ onTogglePanel, onOpenPalette }: { onTogglePanel: () => 
         {crumbs.map((crumb) => (
           <span key={crumb} className="flex items-center gap-2">
             <span className="text-muted-foreground">/</span>
-            <span className="font-medium">{labels[crumb] ?? (crumb[0]?.toUpperCase() + crumb.slice(1))}</span>
+            <span className="font-medium">{labels[crumb] ?? crumb}</span>
           </span>
         ))}
       </nav>

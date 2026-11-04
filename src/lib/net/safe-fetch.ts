@@ -55,43 +55,102 @@ async function writeNetworkLog(entry: {
   }
 }
 
+function isRedirect(status: number): boolean {
+  return status === 301 || status === 302 || status === 303 || status === 307 || status === 308;
+}
+
+function removeBodyHeaders(headers: Headers): void {
+  for (const name of ["content-encoding", "content-language", "content-length", "content-location", "content-type"]) {
+    headers.delete(name);
+  }
+}
+
+function redirectedRequest(current: Request, target: URL, status: number): Request {
+  let method = current.method;
+  const headers = new Headers(current.headers);
+  const changesToGet = (status === 303 && method !== "GET" && method !== "HEAD")
+    || ((status === 301 || status === 302) && method === "POST");
+  const body = changesToGet || !current.body ? undefined : current.clone().body;
+  if (changesToGet) {
+    method = "GET";
+    removeBodyHeaders(headers);
+  }
+  if (new URL(current.url).origin !== target.origin) {
+    for (const name of ["authorization", "proxy-authorization", "cookie", "cookie2"]) headers.delete(name);
+  }
+  return new Request(target, {
+    method,
+    headers,
+    body,
+    redirect: "manual",
+    signal: current.signal,
+    cache: current.cache,
+    credentials: current.credentials,
+    integrity: current.integrity,
+    keepalive: current.keepalive,
+    mode: current.mode,
+    referrer: current.referrer,
+    referrerPolicy: current.referrerPolicy,
+    ...(body ? { duplex: "half" } : {}),
+  });
+}
+
 export async function safeFetch(
   input: RequestInfo | URL,
   init?: RequestInit,
   purpose = "unspecified",
 ): Promise<Response> {
-  const requestUrl = input instanceof Request ? input.url : String(input);
-  const url = new URL(requestUrl);
-  const host = url.hostname.toLowerCase();
-  const method = (init?.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
-  const start = Date.now();
+  const redirectMode = init?.redirect ?? (input instanceof Request ? input.redirect : "follow");
+  let request = new Request(input, { ...init, redirect: "manual" });
   const bytesOut =
     typeof init?.body === "string"
       ? Buffer.byteLength(init.body)
       : init?.body instanceof Uint8Array
         ? init.body.byteLength
         : 0;
-  let allowed = LOOPBACK.has(host);
-  if (!allowed) {
-    const offline = await getSetting("privacy.offlineMode").catch(() => false);
-    if (!offline) allowed = (await configuredHosts()).has(host);
-  }
-  if (!allowed) {
-    await writeNetworkLog({
-      host,
-      method,
-      path: url.pathname,
-      purpose,
-      status: null,
-      blocked: true,
-      bytesOut,
-      bytesIn: 0,
-      durationMs: Date.now() - start,
-    });
-    throw new EgressBlockedError(host);
-  }
-  try {
-    const response = await fetch(input, init);
+  let followed = 0;
+  while (true) {
+    const url = new URL(request.url);
+    const host = url.hostname.toLowerCase();
+    const method = request.method.toUpperCase();
+    const start = Date.now();
+    const hopBytesOut = method === "GET" || method === "HEAD" ? 0 : bytesOut;
+    let allowed = LOOPBACK.has(host);
+    if (!allowed) {
+      const offline = await getSetting("privacy.offlineMode").catch(() => false);
+      if (!offline) allowed = (await configuredHosts()).has(host);
+    }
+    if (!allowed) {
+      await writeNetworkLog({
+        host,
+        method,
+        path: url.pathname,
+        purpose,
+        status: null,
+        blocked: true,
+        bytesOut: hopBytesOut,
+        bytesIn: 0,
+        durationMs: Date.now() - start,
+      });
+      throw new EgressBlockedError(host);
+    }
+    let response: Response;
+    try {
+      response = await fetch(request.clone());
+    } catch (error) {
+      await writeNetworkLog({
+        host,
+        method,
+        path: url.pathname,
+        purpose,
+        status: null,
+        blocked: false,
+        bytesOut: hopBytesOut,
+        bytesIn: 0,
+        durationMs: Date.now() - start,
+      });
+      throw error;
+    }
     await writeNetworkLog({
       host,
       method,
@@ -99,24 +158,16 @@ export async function safeFetch(
       purpose,
       status: response.status,
       blocked: false,
-      bytesOut,
+      bytesOut: hopBytesOut,
       bytesIn: Number(response.headers.get("content-length") ?? 0),
       durationMs: Date.now() - start,
     });
-    return response;
-  } catch (error) {
-    await writeNetworkLog({
-      host,
-      method,
-      path: url.pathname,
-      purpose,
-      status: null,
-      blocked: false,
-      bytesOut,
-      bytesIn: 0,
-      durationMs: Date.now() - start,
-    });
-    throw error;
+    const location = response.headers.get("location");
+    if (!isRedirect(response.status) || !location || redirectMode === "manual") return response;
+    if (redirectMode === "error") throw new TypeError("Redirect encountered while redirect mode is 'error'.");
+    if (followed >= 3) throw new TypeError("Too many redirects.");
+    request = redirectedRequest(request, new URL(location, url), response.status);
+    followed += 1;
   }
 }
 
