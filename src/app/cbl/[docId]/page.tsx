@@ -14,5 +14,5 @@ export default async function CblDocumentPage({ params }: { params: Promise<{ do
 
   const pages = await db.select().from(docPages).where(eq(docPages.documentId, docId)).orderBy(asc(docPages.page));
   const chunks = await db.select().from(docChunks).where(eq(docChunks.documentId, docId)).orderBy(asc(docChunks.ord));
-  return <WorkspaceShell><DocumentViewer key={document.id} initialData={{ document, pages, chunks } as DocData} /></WorkspaceShell>;
+  return <WorkspaceShell breadcrumbLabel={document.title}><DocumentViewer key={document.id} initialData={{ document, pages, chunks } as DocData} /></WorkspaceShell>;
 }

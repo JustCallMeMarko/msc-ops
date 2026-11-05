@@ -12,6 +12,9 @@ describe("document heading filters", () => {
     expect(suggestionHeading("C. BOOTH ACTIVATION")).toBe(true);
     expect(suggestionHeading("D. POST-ACTIVITY REPORT")).toBe(true);
     expect(suggestionHeading("E. FUNDRAISING")).toBe(true);
-    expect(sectionSuggestionLabel("D. POST-ACTIVITY REPORT")).toBe("Post-Activity Report");
+    expect(sectionSuggestionLabel("D. POST-ACTIVITY REPORT")).toBe("Post-activity report");
+    expect(sectionSuggestionLabel("D. AUTHORITY OF SDAO")).toBe("Authority of SDAO");
+    expect(sectionSuggestionLabel("A. RSO AND SCOA GUIDANCE FOR PAR CBL NU OSA"))
+      .toBe("RSO and SCOA guidance for PAR CBL NU OSA");
   });
 });

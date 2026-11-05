@@ -1,3 +1,5 @@
+const preservedAcronyms = new Set(["SDAO", "RSO", "SCOA", "PAR", "CBL", "NU", "OSA"]);
+
 export function isReadableHeading(value: string): boolean {
   const text = value.trim();
   if (!text || !/^[A-Za-z0-9\s›&'().,:/-]+$/.test(text)) return false;
@@ -17,5 +19,12 @@ export function suggestionHeading(value: string): boolean {
 
 export function sectionSuggestionLabel(value: string): string {
   const leaf = value.split("›").at(-1)?.trim().replace(/^[A-Z]\.\s*/, "") ?? value.trim();
-  return leaf.toLocaleLowerCase("en").replace(/(^|[\s-])([a-z])/g, (_match, prefix: string, letter: string) => `${prefix}${letter.toLocaleUpperCase("en")}`);
+  let firstWord = true;
+  return leaf.toLocaleLowerCase("en").replace(/[a-z0-9]+/g, (word) => {
+    const acronym = word.toLocaleUpperCase("en");
+    const isFirstWord = firstWord;
+    firstWord = false;
+    if (preservedAcronyms.has(acronym)) return acronym;
+    return isFirstWord ? `${word[0]!.toLocaleUpperCase("en")}${word.slice(1)}` : word;
+  });
 }

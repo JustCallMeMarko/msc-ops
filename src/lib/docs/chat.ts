@@ -48,6 +48,7 @@ function sentenceRanges(text: string): Array<{ start: number; end: number }> {
 }
 
 function appendSentenceCitation(sentence: string, number: number): string {
+  if (!sentence.trim()) return `[${number}]`;
   const ending = sentence.match(/([.!?]+["'’”)\]]*)$/);
   if (!ending) return `${sentence.trimEnd()} [${number}]`;
   const punctuation = ending[1]!;
@@ -63,36 +64,46 @@ export function autoCiteAnswer(
   const ranges = sentenceRanges(text);
   let cursor = 0;
   let output = "";
+  let lastCitation: number | undefined;
   for (const range of ranges) {
     const sentence = text.slice(range.start, range.end);
     output += text.slice(cursor, range.start);
-    const hasCitation = [...sentence.matchAll(/\[(\d+)\]/g)]
-      .some((match) => Number(match[1]) >= 1 && Number(match[1]) <= sources.length);
-    if (hasCitation) {
-      output += sentence;
-      cursor = range.end;
-      continue;
-    }
-    const tokens = contentTokens(sentence.replace(/\[\d+\]/g, ""));
-    if (tokens.size) {
-      let bestNumber = 0;
-      let bestScore = 0;
-      sources.forEach((source, index) => {
-        const sourceTokens = contentTokens(`${source.headingPath} ${source.text}`);
-        const overlap = [...tokens].filter((token) => sourceTokens.has(token)).length / tokens.size;
-        if (overlap > bestScore) {
-          bestScore = overlap;
-          bestNumber = index + 1;
+    const citation = [...sentence.matchAll(/\[(\d+)\]/g)]
+      .map((match) => Number(match[1]))
+      .find((number) => number >= 1 && number <= sources.length);
+    const body = stripInvalidCitations(sentence, sources.length)
+      .replace(/\[\d+\]/g, "")
+      .replace(/\s+([.,;!?])/g, "$1")
+      .replace(/ {2,}/g, " ")
+      .trimEnd();
+    let number = citation;
+    let automatic = false;
+    if (number === undefined) {
+      const tokens = contentTokens(body);
+      if (tokens.size) {
+        let bestNumber = 0;
+        let bestScore = 0;
+        sources.forEach((source, index) => {
+          const sourceTokens = contentTokens(`${source.headingPath} ${source.text}`);
+          const overlap = [...tokens].filter((token) => sourceTokens.has(token)).length / tokens.size;
+          if (overlap > bestScore) {
+            bestScore = overlap;
+            bestNumber = index + 1;
+          }
+        });
+        if (bestNumber > 0 && bestScore >= threshold
+          && (autoNumbers.has(bestNumber) || autoNumbers.size < 6)) {
+          number = bestNumber;
+          automatic = true;
         }
-      });
-      if (bestNumber > 0 && bestScore >= threshold) {
-        output += appendSentenceCitation(sentence, bestNumber);
-        autoNumbers.add(bestNumber);
-      } else {
-        output += sentence;
       }
+    }
+    if (number !== undefined && number !== lastCitation) {
+      output += appendSentenceCitation(body, number);
+      lastCitation = number;
+      if (automatic) autoNumbers.add(number);
     } else {
-      output += sentence;
+      output += body;
     }
     cursor = range.end;
   }

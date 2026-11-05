@@ -37,4 +37,30 @@ describe("document chat prompt and citations", () => {
     expect(result.text).toBe("The proposal is due five days before the activity [1]. Fundraising needs prior approval [2].");
     expect(result.autoNumbers).toEqual([2]);
   });
+
+  it("keeps one chip per sentence and collapses repeated consecutive sources", () => {
+    const other = { ...source, chunkId: "c2", page: 22, headingPath: "Fundraising", text: "All fundraising requires prior approval." };
+    const result = autoCiteAnswer("First [1] [2]. Second [1]. Third [2] [2].", [source, other]);
+    expect(result.text).toBe("First [1]. Second. Third [2].");
+    expect(result.autoNumbers).toEqual([]);
+  });
+
+  it("collapses repeated chips across long answers", () => {
+    const spam = Array.from({ length: 77 }, (_, index) => `Requirement ${index} [1].`).join(" ");
+    const result = autoCiteAnswer(spam, [source]);
+    expect(result.text.match(/\[\d+\]/g)).toHaveLength(1);
+  });
+
+  it("auto-attributes at most six distinct sources per answer", () => {
+    const sources = Array.from({ length: 7 }, (_, index) => ({
+      ...source,
+      chunkId: `c${index + 1}`,
+      headingPath: `Section ${index}`,
+      text: `subject${index} unique${index} details`,
+    }));
+    const answer = sources.map((_, index) => `subject${index} unique${index} appears.`).join(" ");
+    const result = autoCiteAnswer(answer, sources);
+    expect(result.autoNumbers).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(citationNumbers(result.text, sources.length)).toHaveLength(6);
+  });
 });

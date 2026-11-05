@@ -5,8 +5,9 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
 import "react-pdf/dist/Page/TextLayer.css";
-import { ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from "@primer/octicons-react";
+import { ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, ListUnorderedIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { apiFetch } from "@/lib/api-client";
 import { escapeDocumentText, renderDocumentHighlight } from "@/lib/docs/highlight";
 import { isReadableHeading, sectionSuggestionLabel, suggestionHeading } from "@/lib/docs/headings";
@@ -40,6 +41,7 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
   const [zoom, setZoom] = useState(1);
   const [pageWidth, setPageWidth] = useState(0);
   const [chatWidth, setChatWidth] = useState(420);
+  const [sectionsOpen, setSectionsOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ocrBusy, setOcrBusy] = useState(false);
@@ -144,7 +146,7 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
       const leaf = sectionSuggestionLabel(label);
       if (isReadableHeading(leaf) || suggestionHeading(label)) unique.set(label, chunk);
     }
-    const candidates = [...unique.values()];
+    const candidates = [...unique.values()].sort((left, right) => left.ord - right.ord);
     return {
       headings: candidates.filter((chunk) => isReadableHeading(sectionSuggestionLabel(chunk.headingPath))),
       suggestions: candidates.filter((chunk) => suggestionHeading(chunk.headingPath)).slice(0, 4),
@@ -338,6 +340,20 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
         <input id="document-search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search this document" className="h-9 w-48 rounded-md border border-border bg-background px-2 text-sm" />
         <Button type="submit" size="sm" variant="outline">Search</Button>
       </form>
+      <Popover open={sectionsOpen} onOpenChange={setSectionsOpen}>
+        <PopoverTrigger asChild><Button type="button" size="sm" variant="outline" aria-label="Open sections"><ListUnorderedIcon size={14} />Sections</Button></PopoverTrigger>
+        <PopoverContent align="end" className="max-h-[70vh] w-80 overflow-y-auto p-2">
+          <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Sections</p>
+          {headings.length ? headings.map((chunk) => {
+            const sectionPage = chunk.segments[0]?.page ?? 1;
+            return <button key={chunk.id} type="button" onClick={() => { setPage(sectionPage); setHighlightId(chunk.id); setSectionsOpen(false); }}
+              className="flex w-full items-start gap-3 rounded px-2 py-2 text-left text-sm hover:bg-secondary">
+              <span className="shrink-0 text-xs tabular-nums text-muted-foreground">p.{sectionPage}</span>
+              <span className="min-w-0 whitespace-normal break-words">{chunk.headingPath}</span>
+            </button>;
+          }) : <p className="px-2 py-3 text-sm text-muted-foreground">No readable sections found.</p>}
+        </PopoverContent>
+      </Popover>
       <div className="flex items-center gap-1">
         <Button aria-label="Zoom out" size="sm" variant="ghost" onClick={() => setZoom((value) => Math.max(0.65, value - 0.1))}><ZoomOutIcon size={15} /></Button>
         <span className="w-12 text-center text-xs text-muted-foreground">{Math.round(zoom * 100)}%</span>
@@ -404,33 +420,27 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
               className={`rounded px-2 py-1.5 text-[11px] font-medium transition-colors ${scopeAll === all ? "bg-primary text-white" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>{label}</button>)}
           </div>
         </div>
-        <div className="flex min-h-0 flex-1">
-          <nav className="hidden w-36 shrink-0 overflow-y-auto border-r border-border p-2 xl:block">
-            <p className="px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Outline</p>
-            {headings.map((chunk) => <button key={chunk.id} type="button" onClick={() => { setPage(chunk.segments[0]?.page ?? 1); setHighlightId(chunk.id); }} className="block w-full truncate rounded px-2 py-1.5 text-left text-xs hover:bg-secondary" title={chunk.headingPath}>{chunk.headingPath}</button>)}
-          </nav>
-          <div className="flex min-w-0 flex-1 flex-col">
-            <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
-              {!messages.length && <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
-                Ask about requirements, deadlines, or procedures. Answers cite page passages.
-                {highlighted && <Button size="sm" variant="outline" className="mt-3" onClick={() => setInput(`Explain this section: ${highlighted.headingPath}`)}>Ask about this section</Button>}
-              </div>}
-              {messages.map((message, index) => <div key={`${index}-${message.role}`} className={`max-w-full rounded-lg p-3 text-sm ${message.role === "user" ? "ml-6 bg-secondary" : "mr-2 border border-border bg-card"}`}>
-                {message.role === "assistant" && message.bestMatch && <BestMatchCard match={message.bestMatch} onShow={() => chooseCitation({ ...message.bestMatch!, n: 1 })} />}
-                {message.role === "assistant" && message.content ? renderCitedMarkdown(message.content, message.sources ?? [], chooseCitation) : message.role === "user" ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
-                {message.role === "assistant" && message.sources?.length ? <div className="mt-3 border-t border-border pt-2"><p className="mb-1 text-xs font-semibold text-muted-foreground">Sources</p>{message.sources.map((source) => <button key={`${source.n}-${source.chunkId}`} type="button" className="mr-2 text-xs text-primary underline" onClick={() => chooseCitation(source)}>[{source.n}] {source.title ?? "Document"} · p.{source.page}</button>)}</div> : null}
-                {message.partial && <Button size="sm" variant="outline" className="mt-2" onClick={() => void submit(messages[index - 1]?.content)}>Retry</Button>}
-              </div>)}
-              {error && <p role="alert" className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
-            </div>
-            <div className="border-t border-border p-3">
-              {suggestions.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{suggestions.map((chunk) => <button key={chunk.id} type="button" title={chunk.headingPath} onClick={() => setInput(`Explain ${sectionSuggestionLabel(chunk.headingPath)}`)}
-                className="rounded-full border border-border bg-background px-2 py-1 text-[11px] leading-4 text-muted-foreground hover:bg-secondary hover:text-foreground">Ask: {sectionSuggestionLabel(chunk.headingPath)}</button>)}</div>}
-              <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="flex items-end gap-2">
-                <textarea value={input} onChange={(event) => setInput(event.target.value)} rows={3} placeholder="Ask a question…" className="min-h-20 min-w-0 flex-1 resize-y rounded-md border border-border bg-background p-2 text-sm" />
-                <Button type="submit" disabled={busy || !input.trim()} aria-label="Send question"><ArrowUpIcon size={15} /></Button>
-              </form>
-            </div>
+        <div className="flex min-h-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+            {!messages.length && <div className="rounded-lg border border-dashed border-border p-4 text-sm text-muted-foreground">
+              Ask about requirements, deadlines, or procedures. Answers cite page passages.
+              {highlighted && <Button size="sm" variant="outline" className="mt-3" onClick={() => setInput(`Explain this section: ${highlighted.headingPath}`)}>Ask about this section</Button>}
+            </div>}
+            {messages.map((message, index) => <div key={`${index}-${message.role}`} className={`max-w-full rounded-lg p-3 text-sm ${message.role === "user" ? "ml-6 bg-secondary" : "mr-2 border border-border bg-card"}`}>
+              {message.role === "assistant" && message.bestMatch && <BestMatchCard match={message.bestMatch} onShow={() => chooseCitation({ ...message.bestMatch!, n: 1 })} />}
+              {message.role === "assistant" && message.content ? renderCitedMarkdown(message.content, message.sources ?? [], chooseCitation) : message.role === "user" ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
+              {message.role === "assistant" && message.sources?.length ? <div className="mt-3 border-t border-border pt-2"><p className="mb-1 text-xs font-semibold text-muted-foreground">Sources</p>{message.sources.map((source) => <button key={`${source.n}-${source.chunkId}`} type="button" className="mr-2 text-xs text-primary underline" onClick={() => chooseCitation(source)}>[{source.n}] {source.title ?? "Document"} · p.{source.page}</button>)}</div> : null}
+              {message.partial && <Button size="sm" variant="outline" className="mt-2" onClick={() => void submit(messages[index - 1]?.content)}>Retry</Button>}
+            </div>)}
+            {error && <p role="alert" className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
+          </div>
+          <div className="border-t border-border p-3">
+            {suggestions.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{suggestions.map((chunk) => <button key={chunk.id} type="button" title={chunk.headingPath} onClick={() => setInput(`Explain ${sectionSuggestionLabel(chunk.headingPath)}`)}
+              className="rounded-full border border-border bg-background px-2 py-1 text-[11px] leading-4 text-muted-foreground hover:bg-secondary hover:text-foreground">Ask: {sectionSuggestionLabel(chunk.headingPath)}</button>)}</div>}
+            <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="flex items-end gap-2">
+              <textarea value={input} onChange={(event) => setInput(event.target.value)} rows={3} placeholder="Ask a question…" className="min-h-20 min-w-0 flex-1 resize-y rounded-md border border-border bg-background p-2 text-sm" />
+              <Button type="submit" disabled={busy || !input.trim()} aria-label="Send question"><ArrowUpIcon size={15} /></Button>
+            </form>
           </div>
         </div>
       </aside>
@@ -439,21 +449,21 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
 }
 
 function renderCitedMarkdown(content: string, sources: Source[], onCitation: (source?: Source) => void) {
-  const pieces = content.split(/(\[\d+\])/g);
+  const markdown = content.replace(/\[(\d+)\](?!\s*\()/g, (_, number: string) => `[${number}](https://msc-citation.invalid/${number})`);
   return <div className="prose prose-sm max-w-none dark:prose-invert">
-    {pieces.map((piece, index) => {
-      const match = /^\[(\d+)\]$/.exec(piece);
-      if (match) {
-        const number = Number(match[1]);
-        const source = sources.find((item) => item.n === number);
-        return <button key={index} type="button" title={source?.auto ? "Matched automatically" : undefined} onClick={() => onCitation(source)} disabled={!source} className={`mx-0.5 inline-flex rounded px-1.5 py-0.5 text-xs font-semibold align-baseline ${source?.auto ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary"}`}>[{number}]</button>;
-      }
-      return <ReactMarkdown key={index} components={{
-        a: ({ href, children }) => href && /^https?:\/\//i.test(href)
+    <ReactMarkdown components={{
+      a: ({ href, children }) => {
+        const citation = /^https:\/\/msc-citation\.invalid\/(\d+)$/.exec(href ?? "");
+        if (citation) {
+          const number = Number(citation[1]);
+          const source = sources.find((item) => item.n === number);
+          return <button type="button" title={source?.auto ? "Matched automatically" : undefined} onClick={() => onCitation(source)} disabled={!source} className={`mx-0.5 inline-flex rounded px-1.5 py-0.5 text-xs font-semibold align-baseline ${source?.auto ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary"}`}>[{number}]</button>;
+        }
+        return href && /^https?:\/\//i.test(href)
           ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
-          : <>{children}</>,
-      }}>{piece}</ReactMarkdown>;
-    })}
+          : <>{children}</>;
+      }
+    }}>{markdown}</ReactMarkdown>
   </div>;
 }
 
