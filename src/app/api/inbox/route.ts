@@ -9,17 +9,18 @@ import { lateParWarning } from "@/lib/events/logic";
 import { MANILA_TIME_ZONE, taskState } from "@/lib/tasks/logic";
 import { listTaskRows } from "@/lib/tasks/route-utils";
 import { plural } from "@/lib/utils";
+import { getFinanceSnapshot } from "@/lib/finance/db-utils";
 
 export const dynamic = "force-dynamic";
 
-const groups = ["checkin_due", "overdue", "due_today", "due_this_week", "event_deadlines", "late_par", "posts_due"] as const;
+const groups = ["checkin_due", "overdue", "due_today", "due_this_week", "event_deadlines", "late_par", "posts_due", "finance"] as const;
 
 export async function GET() {
   const currentTime = now();
   const { db } = await getDb();
   const rows = await listTaskRows(db, and(isNull(tasks.deletedAt), notInArray(tasks.status, ["done", "cancelled"])));
   const output: Record<(typeof groups)[number], unknown[]> = {
-    checkin_due: [], overdue: [], due_today: [], due_this_week: [], event_deadlines: [], late_par: [], posts_due: [],
+    checkin_due: [], overdue: [], due_today: [], due_this_week: [], event_deadlines: [], late_par: [], posts_due: [], finance: [],
   };
   for (const { task, committee, assignee } of rows) {
     const state = taskState(task, currentTime);
@@ -85,5 +86,7 @@ export async function GET() {
     const firstPlatform = rows.filter((caption) => post.platforms.includes(caption.platform)).at(-1);
     return { ...post, event, caption: base?.body ?? firstPlatform?.body ?? "" };
   });
+  output.finance = (await getFinanceSnapshot()).whatToDoNow
+    .filter((item) => item.severity === "critical" || item.severity === "warning");
   return NextResponse.json(output);
 }

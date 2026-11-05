@@ -39,6 +39,7 @@ export const settingSchemas = {
   "tasks.nudgeTemplate": z.string().max(2000),
   "brand.kit": brandKitSchema,
   "creatives.autoSchedule": z.boolean(),
+  "finance.auditDate": z.string().date().nullable(),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
@@ -55,6 +56,7 @@ const defaults: { [K in SettingKey]: SettingValue<K> } = {
     colors: { primary: "#0969da", secondary: "#1f6feb", accent: "#bf8700", background: "#0d1117", text: "#f0f6fc" },
   },
   "creatives.autoSchedule": true,
+  "finance.auditDate": null,
 };
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {

@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, date, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid } from "drizzle-orm/pg-core";
+import { bigserial, bigint, boolean, check, date, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { uuidv7 } from "uuidv7";
+import type { FinanceCategory, FinanceKind } from "@/lib/finance/constants";
 import { commonColumns } from "./columns";
 
 export const appMeta = pgTable("app_meta", {
@@ -309,8 +310,119 @@ export const postActivity = pgTable("post_activity", {
   check("post_activity_kind_check", sql`${table.kind} in ('comment', 'status_change', 'asset_upload', 'caption_approved')`),
 ]);
 
+export const accounts = pgTable("accounts", {
+  ...commonColumns,
+  name: text("name").notNull(),
+  kind: text("kind").$type<"bank" | "cash" | "ewallet">().notNull(),
+  bankName: text("bank_name"),
+  accountLast4: text("account_last4"),
+  openedAt: date("opened_at", { mode: "string" }),
+  signatoryMemberIds: uuid("signatory_member_ids").array().notNull().default(sql`'{}'::uuid[]`),
+  archivedAt: timestamp("archived_at", { withTimezone: true }),
+}, (table) => [
+  check("accounts_kind_check", sql`${table.kind} in ('bank', 'cash', 'ewallet')`),
+  check("accounts_last4_check", sql`${table.accountLast4} is null or ${table.accountLast4} ~ '^[0-9]{4}$'`),
+]);
+
+export const ledgerEntries = pgTable("ledger_entries", {
+  id: uuid("id").primaryKey().$defaultFn(() => uuidv7()),
+  seq: bigserial("seq", { mode: "number" }).notNull(),
+  accountId: uuid("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  eventId: uuid("event_id").references(() => events.id, { onDelete: "set null" }),
+  kind: text("kind").$type<FinanceKind>().notNull(),
+  category: text("category").$type<FinanceCategory>().notNull(),
+  amountCentavos: bigint("amount_centavos", { mode: "number" }).notNull(),
+  occurredOn: date("occurred_on", { mode: "string" }).notNull(),
+  counterparty: text("counterparty").notNull().default(""),
+  description: text("description").notNull().default(""),
+  orNumber: text("or_number").notNull().default(""),
+  approvedByMemberId: uuid("approved_by_member_id").references(() => members.id, { onDelete: "set null" }),
+  targetEntryId: uuid("target_entry_id").references((): AnyPgColumn => ledgerEntries.id, { onDelete: "restrict" }),
+  replacesEntryId: uuid("replaces_entry_id").references((): AnyPgColumn => ledgerEntries.id, { onDelete: "restrict" }),
+  reason: text("reason").notNull().default(""),
+  prevHash: text("prev_hash").notNull().default(""),
+  hash: text("hash").notNull().default(""),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex("ledger_entries_seq_unique").on(table.seq),
+  index("ledger_entries_account_seq_idx").on(table.accountId, table.seq),
+  index("ledger_entries_event_idx").on(table.eventId),
+  check("ledger_entries_kind_check", sql`${table.kind} in ('income', 'expense', 'transfer_out', 'transfer_in', 'void', 'restore')`),
+  check("ledger_entries_category_check", sql`${table.category} in ('registration_fees', 'sponsorship', 'fundraising', 'merch_sales', 'dues', 'venue', 'food', 'printing', 'tokens', 'transportation', 'supplies', 'bank_fees', 'other')`),
+  check("ledger_entries_amount_check", sql`${table.amountCentavos} > 0`),
+  check("ledger_entries_reason_check", sql`(${table.kind} not in ('void', 'restore') and ${table.replacesEntryId} is null) or length(trim(${table.reason})) > 0`),
+  check("ledger_entries_target_check", sql`(${table.kind} in ('void', 'restore')) = (${table.targetEntryId} is not null)`),
+  check("ledger_entries_replaces_check", sql`(${table.replacesEntryId} is null) or length(trim(${table.reason})) > 0`),
+]);
+
+export const ledgerReceipts = pgTable("ledger_receipts", {
+  id: uuid("id").primaryKey().$defaultFn(() => uuidv7()),
+  entryId: uuid("entry_id").notNull().references(() => ledgerEntries.id, { onDelete: "restrict" }),
+  fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "restrict" }),
+  addedAt: timestamp("added_at", { withTimezone: true }).notNull().defaultNow(),
+  removedAt: timestamp("removed_at", { withTimezone: true }),
+}, (table) => [
+  uniqueIndex("ledger_receipts_entry_file_unique").on(table.entryId, table.fileId),
+  index("ledger_receipts_entry_idx").on(table.entryId, table.removedAt),
+]);
+
+export const budgetLines = pgTable("budget_lines", {
+  ...commonColumns,
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  category: text("category").$type<FinanceCategory>().notNull(),
+  plannedCentavos: bigint("planned_centavos", { mode: "number" }).notNull(),
+  note: text("note").notNull().default(""),
+}, (table) => [
+  uniqueIndex("budget_lines_event_category_unique").on(table.eventId, table.category),
+  check("budget_lines_category_check", sql`${table.category} in ('registration_fees', 'sponsorship', 'fundraising', 'merch_sales', 'dues', 'venue', 'food', 'printing', 'tokens', 'transportation', 'supplies', 'bank_fees', 'other')`),
+  check("budget_lines_planned_check", sql`${table.plannedCentavos} >= 0`),
+]);
+
+export const liquidations = pgTable("liquidations", {
+  ...commonColumns,
+  eventId: uuid("event_id").notNull().references(() => events.id, { onDelete: "cascade" }),
+  status: text("status").notNull().default("open"),
+  submittedAt: timestamp("submitted_at", { withTimezone: true }),
+  approvedAt: timestamp("approved_at", { withTimezone: true }),
+  note: text("note").notNull().default(""),
+}, (table) => [
+  uniqueIndex("liquidations_event_unique").on(table.eventId),
+  check("liquidations_status_check", sql`${table.status} in ('open', 'submitted', 'approved')`),
+]);
+
+export const liquidationItems = pgTable("liquidation_items", {
+  ...commonColumns,
+  liquidationId: uuid("liquidation_id").notNull().references(() => liquidations.id, { onDelete: "cascade" }),
+  entryId: uuid("entry_id").notNull().references(() => ledgerEntries.id, { onDelete: "restrict" }),
+}, (table) => [
+  uniqueIndex("liquidation_items_entry_unique").on(table.entryId),
+  uniqueIndex("liquidation_items_liquidation_entry_unique").on(table.liquidationId, table.entryId),
+]);
+
+export const reconciliations = pgTable("reconciliations", {
+  ...commonColumns,
+  accountId: uuid("account_id").notNull().references(() => accounts.id, { onDelete: "restrict" }),
+  statementDate: date("statement_date", { mode: "string" }).notNull(),
+  statementBalanceCentavos: bigint("statement_balance_centavos", { mode: "number" }).notNull(),
+  computedBalanceCentavos: bigint("computed_balance_centavos", { mode: "number" }).notNull(),
+  note: text("note").notNull().default(""),
+}, (table) => [
+  index("reconciliations_account_date_idx").on(table.accountId, table.statementDate),
+]);
+
+export const guideProgress = pgTable("guide_progress", {
+  ...commonColumns,
+  guideKey: text("guide_key").notNull(),
+  stepKey: text("step_key").notNull(),
+  doneAt: timestamp("done_at", { withTimezone: true }),
+  note: text("note").notNull().default(""),
+}, (table) => [
+  uniqueIndex("guide_progress_guide_step_unique").on(table.guideKey, table.stepKey),
+]);
+
 export const schema = {
   appMeta, settings, providers, networkLog, committees, members, events, deadlineRules, holidays,
   tasks, taskActivity, checklistItems, attendees, announcementTemplates, files, fileLinks,
   posts, postingRules, postAssets, captions, captionTemplates, hashtagSets, mentionLists, postActivity,
+  accounts, ledgerEntries, ledgerReceipts, budgetLines, liquidations, liquidationItems, reconciliations, guideProgress,
 };
