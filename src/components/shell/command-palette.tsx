@@ -7,11 +7,11 @@ import { apiFetch } from "@/lib/api-client";
 import { useTheme } from "next-themes";
 
 const destinations = [
-  ["Inbox", "/"], ["Overview", "/overview"], ["Tasks", "/tasks"], ["Events", "/events"],
-  ["Committees", "/committees"],
-  ["Creatives", "/creatives"], ["Finance", "/finance"], ["CBL", "/cbl"], ["Files", "/files"],
-  ["Templates", "/templates"], ["Chat", "/chat"], ["Manual", "/manual"],
-  ["Compliance", "/compliance"], ["Settings", "/settings/general"],
+  ["Overview", "/overview"], ["People", "/committees"], ["Events", "/events"],
+  ["Posts", "/creatives"], ["Finance", "/finance"], ["Files + templates", "/files"],
+  ["Chat", "/chat"],
+  ["Inbox", "/"], ["Tasks", "/tasks"], ["CBL library", "/cbl"], ["Templates", "/templates"],
+  ["Manual", "/manual"], ["Compliance", "/compliance"], ["Settings", "/settings/general"],
 ];
 
 export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {

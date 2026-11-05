@@ -7,11 +7,11 @@ import { Button } from "@/components/ui/button";
 
 const labels: Record<string, string> = {
   inbox: "Inbox", setup: "Setup", recovery: "Recovery", dev: "Dev", ui: "UI",
-  overview: "Overview", tasks: "Tasks", events: "Events", creatives: "Creatives", finance: "Finance",
+  overview: "Overview", tasks: "Tasks", events: "Events", creatives: "Posts", finance: "Finance",
   cbl: "CBL", files: "Files", templates: "Templates", chat: "Chat", manual: "Manual", ai: "AI",
   general: "General", privacy: "Privacy", about: "About",
   compliance: "Compliance", settings: "Settings",
-  committees: "Committees",
+  committees: "People",
 };
 
 export function Topbar({ onTogglePanel, onOpenPalette, breadcrumbLabel }: { onTogglePanel: () => void; onOpenPalette: () => void; breadcrumbLabel?: string }) {
@@ -20,7 +20,7 @@ export function Topbar({ onTogglePanel, onOpenPalette, breadcrumbLabel }: { onTo
   return (
     <header className="flex h-14 shrink-0 items-center justify-between border-b border-border px-5">
       <nav className="flex items-center gap-2 text-sm" aria-label="Breadcrumb">
-        <Link href="/" className="text-muted-foreground hover:text-foreground">MSC</Link>
+        <Link href="/overview" className="text-muted-foreground hover:text-foreground">MSC</Link>
         {crumbs.map((crumb, index) => (
           <span key={crumb} className="flex items-center gap-2">
             <span className="text-muted-foreground">/</span>

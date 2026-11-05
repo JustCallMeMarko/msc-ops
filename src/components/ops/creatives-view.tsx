@@ -125,7 +125,7 @@ export function CreativesView() {
 
   return <div className="space-y-5">
     <div className="flex flex-wrap items-center justify-between gap-3">
-      <div><h1 className="text-2xl font-semibold">Creatives</h1><p className="text-sm text-muted-foreground">Plan, review, and prepare posts for manual publishing.</p></div>
+      <div><h1 className="text-2xl font-semibold">Posts</h1><p className="text-sm text-muted-foreground">Plan, review, and prepare posts for manual publishing.</p></div>
       <Button onClick={() => setCreating(!creating)}><PlusIcon size={14} />New post</Button>
     </div>
     {params.get("tab") !== "library" ? <div className="flex flex-wrap items-center gap-2"><div className="min-w-64 flex-1"><FilterBar placeholder="Filter posts… type: platform: status: event: owner: from: to:" /></div><Link href="/creatives?tab=library"><Button variant="outline">Library</Button></Link><div className="flex rounded-md border border-border bg-card p-0.5" role="group" aria-label="Creative view">{([{ value: "list", label: "List", Icon: ListUnorderedIcon }, { value: "board", label: "Board", Icon: ColumnsIcon }, { value: "calendar", label: "Calendar", Icon: CalendarIcon }]).map(({ value, label, Icon }) => <button key={value} type="button" aria-pressed={view === value} onClick={() => setParam("view", value)} className={`inline-flex h-8 items-center gap-1.5 rounded px-2 text-xs ${view === value ? "bg-secondary font-semibold" : "text-muted-foreground"}`}><Icon size={14} />{label}</button>)}</div></div> : <div className="flex justify-end"><Link href="/creatives"><Button variant="outline">Creative calendar</Button></Link></div>}

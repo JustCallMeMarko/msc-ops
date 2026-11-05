@@ -100,7 +100,7 @@ export default function TemplatesPage() {
     >
       <header className="flex items-center justify-between gap-4">
         <div><p className="text-xs uppercase tracking-wide text-muted-foreground">Files & automation</p><h1 className="text-2xl font-semibold">Templates</h1></div>
-        <Button type="button" onClick={() => inputRef.current?.click()}><UploadIcon size={16} /> Upload template</Button>
+        <div className="flex items-center gap-3"><Link href="/files" className="text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">← Files</Link><Button type="button" onClick={() => inputRef.current?.click()}><UploadIcon size={16} /> Upload template</Button></div>
         <input ref={inputRef} className="hidden" type="file" accept=".docx,.xlsx,.xlsm,.pdf" onChange={(event) => choose(event.target.files?.[0] ?? null)} />
       </header>
 
