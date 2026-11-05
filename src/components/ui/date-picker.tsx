@@ -4,10 +4,12 @@ import { TZDate } from "@date-fns/tz";
 import { addDays, format, getDay } from "date-fns";
 import { CalendarIcon } from "@primer/octicons-react";
 import { useState } from "react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { MANILA_TIME_ZONE } from "@/lib/tasks/logic";
+import { cn } from "@/lib/utils";
 
 export function toManilaDueDate(day: Date): Date {
   const due = new TZDate(day.getFullYear(), day.getMonth(), day.getDate(), MANILA_TIME_ZONE);
@@ -41,11 +43,15 @@ export function DatePicker({
   onChange,
   placeholder = "Pick a date",
   ariaLabel = "Choose date",
+  displayValue,
+  className,
 }: {
   value: Date | null;
   onChange: (value: Date | null) => void;
   placeholder?: string;
   ariaLabel?: string;
+  displayValue?: ReactNode;
+  className?: string;
 }) {
   const [open, setOpen] = useState(false);
   const selected = value ? displayDate(value) : undefined;
@@ -65,10 +71,10 @@ export function DatePicker({
           variant="outline"
           aria-label={ariaLabel}
           aria-expanded={open}
-          className="w-full justify-start text-left font-normal"
+          className={cn("w-full justify-start text-left font-normal", className)}
         >
           <CalendarIcon size={14} />
-          <span className={value ? "" : "text-muted-foreground"}>{selected ? format(selected, "MMM d, yyyy") : placeholder}</span>
+          <span className={value ? "" : "text-muted-foreground"}>{displayValue ?? (selected ? format(selected, "MMM d, yyyy") : placeholder)}</span>
         </Button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-0">

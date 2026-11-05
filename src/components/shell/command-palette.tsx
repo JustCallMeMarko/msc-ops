@@ -60,6 +60,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           <Command.Group heading="Actions" className="px-2 py-1 text-xs text-muted-foreground">
             <Command.Item value="new task" onSelect={() => { router.push("/tasks?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New task</Command.Item>
             <Command.Item value="new committee" onSelect={() => { router.push("/committees?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New committee</Command.Item>
+            <Command.Item value="new event" onSelect={() => { router.push("/events?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New event</Command.Item>
+            <Command.Item value="upload file" onSelect={() => { router.push("/files?upload=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Upload file</Command.Item>
             <Command.Item value="copy all digests" onSelect={() => {
               void fetch("/api/digest").then((response) => response.json()).then(async (rows: Array<{ committee: { name: string }; digest: string }>) => {
                 await navigator.clipboard.writeText(rows.map((row) => `${row.committee.name}\n${row.digest}`).join("\n\n"));

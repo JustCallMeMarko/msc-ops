@@ -1,9 +1,9 @@
-import { and, asc, eq, type SQL } from "drizzle-orm";
+import { and, asc, eq, notInArray, type SQL } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { now } from "@/lib/clock";
 import { getDb } from "@/lib/db/client";
-import { committees, taskActivity, tasks } from "@/lib/db/schema";
+import { checklistItems, committees, taskActivity, tasks } from "@/lib/db/schema";
 import { nextCheckin, taskState } from "@/lib/tasks/logic";
 import { addTaskActivity, getTaskRow, readJson } from "@/lib/tasks/route-utils";
 
@@ -69,6 +69,11 @@ export async function PATCH(request: Request, context: Context) {
     changes.nextCheckinAt = null;
     changes.lastCheckinAt = null;
     changes.snoozedUntil = null;
+  } else if (input.status === "cancelled") {
+    changes.completedAt = null;
+    changes.nextCheckinAt = null;
+    changes.lastCheckinAt = null;
+    changes.snoozedUntil = null;
   } else if (input.status && input.status !== "done" && (current.status === "done" || current.status === "cancelled")) {
     let cadence = input.checkinEveryDays ?? current.checkinEveryDays;
     if (cadence === null || cadence === undefined) {
@@ -100,6 +105,13 @@ export async function PATCH(request: Request, context: Context) {
     await addTaskActivity(db, current.id, key === "status" ? "status_change" : "field_change", "", {
       field: key, oldValue, newValue: value,
     }, currentTime);
+  }
+  if (input.status === "done" || input.status === "cancelled") {
+    await db.update(checklistItems).set({ status: input.status === "done" ? "done" : "na", updatedAt: currentTime })
+      .where(and(eq(checklistItems.taskId, current.id), eq(checklistItems.status, "open")));
+  } else if (input.status && (current.status === "done" || current.status === "cancelled")) {
+    await db.update(checklistItems).set({ status: "open", updatedAt: currentTime })
+      .where(and(eq(checklistItems.taskId, current.id), notInArray(checklistItems.status, ["open"])));
   }
   const row = await getTaskRow(db, current.id);
   return NextResponse.json({ ...row.task, committee: row.committee, assignee: row.assignee });

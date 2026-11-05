@@ -1,24 +1,25 @@
-import { differenceInCalendarDays, isSameDay } from "date-fns";
+import { addDays, differenceInCalendarDays, isSameDay } from "date-fns";
 import { TZDate } from "@date-fns/tz";
-import { and, isNull, notInArray } from "drizzle-orm";
+import { and, eq, isNull, lte, notInArray } from "drizzle-orm";
 import { NextResponse } from "next/server";
 import { now } from "@/lib/clock";
 import { getDb } from "@/lib/db/client";
-import { tasks } from "@/lib/db/schema";
+import { checklistItems, events, tasks } from "@/lib/db/schema";
+import { lateParWarning } from "@/lib/events/logic";
 import { MANILA_TIME_ZONE, taskState } from "@/lib/tasks/logic";
 import { listTaskRows } from "@/lib/tasks/route-utils";
 import { plural } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
-const groups = ["checkin_due", "overdue", "due_today", "due_this_week"] as const;
+const groups = ["checkin_due", "overdue", "due_today", "due_this_week", "event_deadlines", "late_par"] as const;
 
 export async function GET() {
   const currentTime = now();
   const { db } = await getDb();
   const rows = await listTaskRows(db, and(isNull(tasks.deletedAt), notInArray(tasks.status, ["done", "cancelled"])));
   const output: Record<(typeof groups)[number], unknown[]> = {
-    checkin_due: [], overdue: [], due_today: [], due_this_week: [],
+    checkin_due: [], overdue: [], due_today: [], due_this_week: [], event_deadlines: [], late_par: [],
   };
   for (const { task, committee, assignee } of rows) {
     const state = taskState(task, currentTime);
@@ -43,5 +44,25 @@ export async function GET() {
         - (second.dueAt?.getTime() ?? second.nextCheckinAt?.getTime() ?? Infinity);
     });
   }
+  const deadlineLimit = addDays(new TZDate(currentTime, MANILA_TIME_ZONE), 7);
+  const deadlineRows = await db.select({ item: checklistItems, event: events }).from(checklistItems)
+    .innerJoin(events, eq(events.id, checklistItems.eventId))
+    .where(and(
+      eq(checklistItems.status, "open"), isNull(checklistItems.deletedAt), isNull(events.deletedAt),
+      lte(checklistItems.dueAt, deadlineLimit),
+    ));
+  output.event_deadlines = deadlineRows
+    .sort((a, b) => a.item.dueAt.getTime() - b.item.dueAt.getTime())
+    .map(({ item, event }) => ({ ...item, event, late: item.dueAt < currentTime }));
+  const parEvents = new Map<string, typeof events.$inferSelect & { checklistItems: typeof checklistItems.$inferSelect[] }>();
+  for (const { item, event } of deadlineRows) {
+    const bundle = parEvents.get(event.id) ?? { ...event, checklistItems: [] };
+    bundle.checklistItems.push(item);
+    parEvents.set(event.id, bundle);
+  }
+  output.late_par = lateParWarning([...parEvents.values()], currentTime).map((event) => ({
+    ...event,
+    checklistItem: event.checklistItems.find((item) => item.ruleKey === "par"),
+  }));
   return NextResponse.json(output);
 }

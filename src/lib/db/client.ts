@@ -6,7 +6,7 @@ import { vector } from "@electric-sql/pglite-pgvector";
 import { drizzle, type PgliteDatabase } from "drizzle-orm/pglite";
 import { migrate } from "drizzle-orm/pglite/migrator";
 import { getDataDir } from "@/lib/data-dir";
-import { schema } from "./schema";
+import { files, schema } from "./schema";
 
 export type DrizzleDb = PgliteDatabase<typeof schema>;
 export type Database = { pg: PGlite; db: DrizzleDb };
@@ -92,6 +92,13 @@ async function openDatabase(): Promise<Database> {
        ON CONFLICT (key) DO NOTHING`,
     );
     if (!inMemory) {
+      const fileRows = await db.select({
+        sha256: files.sha256, deletedAt: files.deletedAt, createdAt: files.createdAt,
+      }).from(files);
+      const { garbageCollectFileBlobs } = await import("@/lib/files/storage");
+      await garbageCollectFileBlobs(dataDir, fileRows).catch((error: unknown) => {
+        console.warn("File cleanup could not be completed:", error);
+      });
       const { createSnapshot } = await import("./snapshot");
       void createSnapshot(pg, dataDir).catch((error: unknown) => {
         console.warn("Snapshot could not be created:", error);
