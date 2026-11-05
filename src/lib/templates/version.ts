@@ -21,11 +21,20 @@ export function matchReplacementCandidates<T extends { kind: string; format: str
   candidates: T[],
   kind?: string,
 ): Array<{ template: T; score: number }> {
+  const seenLineages = new Set<string>();
   return candidates
     .filter((candidate) => candidate.active && candidate.format === structure.format && (!kind || candidate.kind === kind))
     .map((template) => ({ template, score: labelJaccard(structure, template.structure) }))
     .filter(({ score }) => score >= 0.6)
-    .sort((left, right) => right.score - left.score);
+    .sort((left, right) => right.score - left.score)
+    .filter(({ template }) => {
+      const lineageId = "lineageId" in template && typeof template.lineageId === "string"
+        ? template.lineageId
+        : "id" in template && typeof template.id === "string" ? template.id : JSON.stringify(template.structure);
+      if (seenLineages.has(lineageId)) return false;
+      seenLineages.add(lineageId);
+      return true;
+    });
 }
 
 export async function findReplacementCandidates(structure: TemplateStructure, kind?: string) {
@@ -51,7 +60,18 @@ export function remapByLabel(oldTemplate: Pick<TemplateRecord, "structure" | "ma
   for (const target of newStructure.targets) {
     const previous = oldByLabel.get(normalizeLabel(target.label));
     if (previous?.mapping?.field) {
-      mapping[target.id] = { ...previous.mapping };
+      const previousColumns = new Map((previous.target.columns ?? []).flatMap((column) => {
+        const field = previous.mapping?.columns?.[String(column.index)];
+        return field ? [[normalizeLabel(column.label), field] as const] : [];
+      }));
+      const columns = Object.fromEntries((target.columns ?? []).flatMap((column) => {
+        const field = previousColumns.get(normalizeLabel(column.label));
+        return field ? [[String(column.index), field] as const] : [];
+      }));
+      mapping[target.id] = {
+        ...previous.mapping,
+        ...(target.columns?.length ? { columns } : {}),
+      };
       kept.push({ targetId: target.id, label: target.label, field: previous.mapping.field });
     } else {
       added.push({ targetId: target.id, label: target.label });

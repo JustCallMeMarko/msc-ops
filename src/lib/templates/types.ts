@@ -82,6 +82,15 @@ export type GenerationEntity = {
 export type GridPreview = {
   sheets: Array<{
     name: string;
-    rows: Array<Array<{ v: string | number | boolean | null; missing: boolean; targetId?: string }>>;
+    rows: GridPreviewCell[][];
   }>;
+};
+
+export type GridPreviewCell = {
+  v: string | number | boolean | null;
+  missing: boolean;
+  targetId?: string;
+  colSpan?: number;
+  rowSpan?: number;
+  skip?: boolean;
 };

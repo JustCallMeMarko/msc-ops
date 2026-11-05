@@ -11,12 +11,13 @@ import { Combobox } from "@/components/ui/combobox";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { parsePeso } from "@/lib/finance/logic";
+import { renderCitedMarkdown } from "@/components/docs/citation-markdown";
 
 type Citation = { n: number; documentId: string; page: number; title?: string; text?: string; auto?: boolean };
 type Best = { documentId: string; page: number; title?: string; headingPath?: string; text?: string } | null;
 type ChatActionCard = { type: string; [key: string]: unknown };
 type Message = { role: string; content: string; citations?: Citation[]; bestMatch?: Best; action?: ChatActionCard };
-type UploadCard = { type: string; fileId?: string; filename?: string; documentKind?: string; candidates?: Array<{ id: string; name: string; kind: string; version: number }>; message: string };
+type UploadCard = { type: string; fileId?: string; filename?: string; documentKind?: string; candidates?: Array<{ id: string; name: string; kind: string; version: number; source?: string; score?: number; lineageId?: string }>; message: string };
 
 export function GeneralChat({ compact = false, scopeRef = null }: { compact?: boolean; scopeRef?: string | null }) {
   const router = useRouter();
@@ -30,6 +31,7 @@ export function GeneralChat({ compact = false, scopeRef = null }: { compact?: bo
   const [error, setError] = useState("");
   const [uploadCard, setUploadCard] = useState<UploadCard | null>(null);
   const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [selectedTemplateCandidate, setSelectedTemplateCandidate] = useState("");
   const [accounts, setAccounts] = useState<Array<{ id: string; name: string }>>([]);
   const [accountId, setAccountId] = useState("");
   const [receiptAmount, setReceiptAmount] = useState("");
@@ -101,7 +103,11 @@ export function GeneralChat({ compact = false, scopeRef = null }: { compact?: bo
         } else if (event.type === "text") assistant.content += String(event.text ?? "");
         else if (event.type === "replace") assistant.content = String(event.text ?? "");
         else if (event.type === "sources") assistant.citations = (event.sources as Citation[] | undefined) ?? [];
-        else if (event.type === "action") assistant.action = event.action as ChatActionCard;
+        else if (event.type === "action") {
+          assistant.action = event.action as ChatActionCard;
+          assistant.bestMatch = undefined;
+          assistant.citations = undefined;
+        }
         else if (event.type === "action_fallback") assistant.action = { type: "unresolved", message: "I couldn’t create a valid action. You can do this manually.", href: event.href };
         else if (event.type === "error") setError(String(event.error ?? "The response was interrupted."));
         setMessages([...optimistic.slice(0, -1), { ...assistant }]);
@@ -135,6 +141,7 @@ export function GeneralChat({ compact = false, scopeRef = null }: { compact?: bo
     const result = await classified.json().catch(() => ({}));
     if (!classified.ok) { setError(result.error ?? "Could not classify this file."); return; }
     setUploadCard(result);
+    setSelectedTemplateCandidate(result.type === "template" ? result.candidates?.[0]?.id ?? "new" : "");
   }
 
   async function confirmUpload() {
@@ -153,11 +160,12 @@ export function GeneralChat({ compact = false, scopeRef = null }: { compact?: bo
       form.append("name", uploadFile.name.replace(/\.[^.]+$/, ""));
       form.append("kind", uploadCard.candidates?.[0]?.kind ?? "other");
       form.append("source", "org");
+      if (selectedTemplateCandidate && selectedTemplateCandidate !== "new") form.append("replaceTemplateId", selectedTemplateCandidate);
       const response = await apiFetch("/api/templates", { method: "POST", body: form });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) { setError(payload.error?.message ?? "Could not add template."); return; }
       router.push(`/templates/${payload.template.id}`);
-      setUploadCard(null); setUploadFile(null);
+      setUploadCard(null); setUploadFile(null); setSelectedTemplateCandidate("");
     } else if (uploadCard.type === "receipt") {
       const amountCentavos = parsePeso(receiptAmount);
       if (!uploadCard.fileId || !accountId || amountCentavos === null || amountCentavos <= 0) {
@@ -197,6 +205,10 @@ export function GeneralChat({ compact = false, scopeRef = null }: { compact?: bo
       const template = action.template as { id: string } | undefined;
       const entity = action.entity as { type: string; id: string; title?: string } | undefined;
       if (!template || !entity) return;
+      if (Array.isArray(action.missing) && action.missing.length) {
+        router.push(`${String(action.href ?? `/events/${entity.id}`)}?generate=${encodeURIComponent(template.id)}`);
+        return;
+      }
       const response = await apiFetch(`/api/templates/${template.id}/generate`, {
         method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ entity }),
       });
@@ -255,15 +267,15 @@ export function GeneralChat({ compact = false, scopeRef = null }: { compact?: bo
       <div className="flex-1 space-y-4 overflow-y-auto py-2">
         {messages.length === 0 && <div className="mx-auto mt-12 max-w-lg text-center"><h2 className="text-xl font-semibold">What should we move forward?</h2><p className="mt-2 text-sm text-muted-foreground">Ask about the CBL, RSO Manual, events, finance, or templates.</p></div>}
         {messages.map((message, index) => <article key={`${index}-${message.role}`} className={message.role === "user" ? "ml-auto max-w-[90%] rounded-lg bg-secondary p-3 text-sm" : "max-w-full space-y-3 text-sm"}>
-          {message.role === "assistant" && message.bestMatch && <Card className="border-primary/30 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Best match</p><p className="mt-1 font-medium">{message.bestMatch.headingPath || message.bestMatch.title} · p.{message.bestMatch.page}</p><p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{message.bestMatch.text}</p><Link className="mt-2 inline-block text-xs text-primary underline" href={`/cbl/${message.bestMatch.documentId}?p=${message.bestMatch.page}&hl=${encodeURIComponent(message.bestMatch.text ?? "")}`}>Show in PDF</Link></Card>}
-          {message.content && <p className="whitespace-pre-wrap leading-6">{message.content}</p>}
-          {message.citations?.length ? <div className="flex flex-wrap gap-1">{message.citations.map((citation, ci) => <Link key={`${citation.n}-${ci}`} title={citation.auto ? "Matched automatically" : citation.title ?? "Open cited passage"} className={`rounded-full border px-2 py-0.5 text-xs ${citation.auto ? "border-muted bg-muted/50 text-muted-foreground" : "border-primary/30 bg-primary/10 text-primary"}`} href={`/cbl/${citation.documentId}?p=${citation.page}&hl=${encodeURIComponent(citation.text ?? "")}`}>[{citation.n}]</Link>)}</div> : null}
+          {message.role === "assistant" && !message.action && message.bestMatch && <Card className="border-primary/30 p-3"><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Best match</p><p className="mt-1 font-medium">{message.bestMatch.headingPath || message.bestMatch.title} · p.{message.bestMatch.page}</p><p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{message.bestMatch.text}</p><Link className="mt-2 inline-block text-xs text-primary underline" href={`/cbl/${message.bestMatch.documentId}?page=${message.bestMatch.page}&hl=${encodeURIComponent(message.bestMatch.text ?? "")}`}>Show in PDF</Link></Card>}
+          {message.content && (message.role === "assistant" ? renderCitedMarkdown(message.content, message.citations ?? [], (source) => { if (source) router.push(`/cbl/${source.documentId}?page=${source.page}&hl=${encodeURIComponent(source.text ?? "")}`); }) : <p className="whitespace-pre-wrap leading-6">{message.content}</p>)}
+          {!message.action && message.citations?.length ? <div className="flex flex-wrap gap-1">{message.citations.map((citation, ci) => <Link key={`${citation.n}-${ci}`} title={citation.auto ? "Matched automatically" : citation.title ?? "Open cited passage"} className={`rounded-full border px-2 py-0.5 text-xs ${citation.auto ? "border-muted bg-muted/50 text-muted-foreground" : "border-primary/30 bg-primary/10 text-primary"}`} href={`/cbl/${citation.documentId}?page=${citation.page}&hl=${encodeURIComponent(citation.text ?? "")}`}>[{citation.n}]</Link>)}</div> : null}
           {message.action && <ActionCard action={message.action} onConfirm={() => void confirmAction(message.action!)} onChoose={(choice) => updateAction(index, chooseAction(message.action!, choice))} onDismiss={() => updateAction(index, null)} />}
         </article>)}
-        {uploadCard && <Card className="space-y-3 border-primary/30 p-4"><div className="flex items-start justify-between gap-2"><div><p className="font-medium">{uploadCard.message}</p><p className="mt-1 text-xs text-muted-foreground">{uploadCard.filename}</p></div><button aria-label="Dismiss upload" onClick={() => setUploadCard(null)}><XIcon size={16} /></button></div>
-          {uploadCard.type === "template" && uploadCard.candidates?.map((candidate) => <p key={candidate.id} className="text-sm">Possible replacement: {candidate.name} (v{candidate.version})</p>)}
+        {uploadCard && <Card className="space-y-3 border-primary/30 p-4"><div className="flex items-start justify-between gap-2"><div><p className="font-medium">{uploadCard.message}</p><p className="mt-1 text-xs text-muted-foreground">{uploadCard.filename}</p></div><button aria-label="Dismiss upload" onClick={() => { setUploadCard(null); setSelectedTemplateCandidate(""); }}><XIcon size={16} /></button></div>
+          {uploadCard.type === "template" && <div className="space-y-2" role="radiogroup" aria-label="Template destination">{uploadCard.candidates?.map((candidate) => <button key={candidate.id} type="button" role="radio" aria-checked={selectedTemplateCandidate === candidate.id} onClick={() => setSelectedTemplateCandidate(candidate.id)} className={`flex w-full items-center justify-between rounded border p-2 text-left text-sm ${selectedTemplateCandidate === candidate.id ? "border-primary bg-primary/5" : "border-border"}`}><span><span className="mr-2 inline-flex size-4 items-center justify-center rounded-full border border-current">{selectedTemplateCandidate === candidate.id ? "●" : ""}</span>{candidate.name} (v{candidate.version})</span><span className="text-xs text-muted-foreground">{Math.round((candidate.score ?? 0) * 100)}% label overlap</span></button>)}<button type="button" role="radio" aria-checked={selectedTemplateCandidate === "new"} onClick={() => setSelectedTemplateCandidate("new")} className={`flex w-full items-center rounded border p-2 text-left text-sm ${selectedTemplateCandidate === "new" ? "border-primary bg-primary/5" : "border-border"}`}><span className="mr-2 inline-flex size-4 items-center justify-center rounded-full border border-current">{selectedTemplateCandidate === "new" ? "●" : ""}</span>Add as a new template</button></div>}
           {uploadCard.type === "receipt" && <div className="grid gap-2 sm:grid-cols-2"><Combobox options={accounts.map((account) => ({ value: account.id, label: account.name }))} value={accountId} onChange={setAccountId} placeholder="Choose account…" /><Input aria-label="Receipt amount" value={receiptAmount} onChange={(event) => setReceiptAmount(event.target.value)} placeholder="₱ amount" /><Input aria-label="Receipt date" type="date" value={receiptDate} onChange={(event) => setReceiptDate(event.target.value)} /><Textarea aria-label="Receipt description" value={receiptDescription} onChange={(event) => setReceiptDescription(event.target.value)} placeholder="Description" /></div>}
-          <Button size="sm" disabled={uploadCard.type === "receipt" && (!accountId || !parsePeso(receiptAmount) || !uploadCard.fileId)} onClick={() => void confirmUpload()}>{uploadCard.type === "receipt" ? "Confirm ledger draft" : "Confirm and continue"}</Button></Card>}
+          <Button size="sm" disabled={(uploadCard.type === "receipt" && (!accountId || !parsePeso(receiptAmount) || !uploadCard.fileId)) || (uploadCard.type === "template" && !selectedTemplateCandidate)} onClick={() => void confirmUpload()}>{uploadCard.type === "receipt" ? "Confirm ledger draft" : uploadCard.type === "template" ? selectedTemplateCandidate === "new" ? "Add & map" : "Replace & review mapping" : "Confirm and continue"}</Button></Card>}
       </div>
       {error && <p role="status" className="my-1 text-xs text-destructive">{error}</p>}
       <div className="mt-2 rounded-lg border border-border bg-card p-2" onDragOver={(event) => event.preventDefault()} onDrop={(event) => { event.preventDefault(); const dropped = event.dataTransfer.files[0]; if (dropped) void upload(dropped); }}>
@@ -277,9 +289,10 @@ export function GeneralChat({ compact = false, scopeRef = null }: { compact?: bo
 function ActionCard({ action, onConfirm, onChoose, onDismiss }: { action: ChatActionCard; onConfirm: () => void; onChoose: (choice: { id: string; name?: string; label?: string; before?: number }) => void; onDismiss: () => void }) {
   if (action.type === "unresolved") return <Card className="p-3"><p>{String(action.message)}</p><Link className="mt-2 inline-block text-primary underline" href={String(action.href ?? "/templates")}>Do this manually →</Link></Card>;
   if (action.needsSelection) return <Card className="space-y-2 p-3"><p className="font-medium">Choose the matching record before continuing.</p>{(action.choices as Array<{ id: string; name?: string; label?: string; before?: number }>).map((choice) => <Button key={choice.id} variant="outline" size="sm" onClick={() => onChoose(choice)}>{choice.name ?? choice.label}</Button>)}<Button variant="ghost" size="sm" onClick={onDismiss}>Dismiss</Button></Card>;
+  const missing = Array.isArray(action.missing) ? action.missing as Array<{ label?: string }> : [];
   const detail = action.type === "generate_doc" ? String(action.change ?? "Generate a document")
     : action.type === "edit_deadline_rule" ? `${String(action.label)}: ${String(action.before)} days → ${String(action.after)} days`
       : action.type === "draft_ledger_entry" ? `Draft ${String((action.entry as { kind?: string })?.kind)} for ${String(action.accountName)}`
         : `Map ${String(action.filename)} as a template`;
-  return <Card className="space-y-3 border-primary/30 p-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Proposed action</p><p className="mt-1 font-medium">{detail}</p></div><div className="flex gap-2"><Button size="sm" onClick={onConfirm}><CheckIcon size={14} /> Confirm</Button><Button size="sm" variant="outline" onClick={onDismiss}>Dismiss</Button></div></Card>;
+  return <Card className="space-y-3 border-primary/30 p-4"><div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Proposed action</p><p className="mt-1 font-medium">{detail}</p>{action.type === "generate_doc" && <dl className="mt-3 grid gap-x-4 gap-y-1 text-xs text-muted-foreground sm:grid-cols-2"><div><dt className="font-medium text-foreground">Template</dt><dd>{String((action.template as { name?: string })?.name ?? "—")} · v{String(action.templateVersion ?? "—")}</dd></div><div><dt className="font-medium text-foreground">Source</dt><dd>{String(action.templateSource ?? "—")}</dd></div><div><dt className="font-medium text-foreground">Event</dt><dd>{String((action.entity as { title?: string })?.title ?? "—")}</dd></div><div><dt className="font-medium text-foreground">Output</dt><dd className="break-all">{String(action.outputFilename ?? "—")}</dd></div><div><dt className="font-medium text-foreground">Missing fields</dt><dd>{missing.length}</dd></div></dl>}</div><div className="flex gap-2"><Button size="sm" onClick={onConfirm}><CheckIcon size={14} /> {missing.length ? "Fill in & generate" : "Confirm"}</Button><Button size="sm" variant="outline" onClick={onDismiss}>Dismiss</Button></div></Card>;
 }

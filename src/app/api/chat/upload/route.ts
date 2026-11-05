@@ -25,7 +25,7 @@ export async function POST(request: Request) {
       fileId: file.id,
       filename: file.originalName,
       structure,
-      candidates: candidates.map(({ template, score }) => ({ id: template.id, name: template.name, kind: template.kind, version: template.version, score })),
+      candidates: candidates.map(({ template, score }) => ({ id: template.id, lineageId: template.lineageId, name: template.name, kind: template.kind, source: template.source, version: template.version, score })),
       message: candidates.length ? "This looks like a template replacement. Review it before mapping." : "Add this as a new template, then map its fields.",
     });
   }

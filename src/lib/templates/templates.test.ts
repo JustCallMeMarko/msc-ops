@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
+import DOMPurify from "isomorphic-dompurify";
+import mammoth from "mammoth";
 import { PDFDocument } from "pdf-lib";
 import { extractStructure, LEGACY_OFFICE_ERROR, MACRO_WARNING } from "./structure";
 import { fillDocx } from "./fill-docx";
@@ -63,6 +65,19 @@ describe("template structure and filling", () => {
     expect(result).not.toContain("Title</w:t>");
   });
 
+  it("keeps DOCX table cells as real sanitized table markup for previews", async () => {
+    const bytes = await archive(docxXml(`<w:tbl>${tableRow(["Expense", "Estimated Amount"])}${tableRow(["Venue", "2200"])}</w:tbl>`));
+    const converted = await mammoth.convertToHtml({ buffer: Buffer.from(bytes) });
+    const html = DOMPurify.sanitize(converted.value, { USE_PROFILES: { html: true } });
+    expect(html).toContain("<table>");
+    const cells = [...html.matchAll(/<td[^>]*>([\s\S]*?)<\/td>/g)].map((match) => match[1] ?? "");
+    expect(cells).toHaveLength(4);
+    expect(cells[0]).toContain("Expense");
+    expect(cells[1]).toContain("Estimated Amount");
+    expect(cells[2]).toContain("Venue");
+    expect(cells[3]).toContain("2200");
+  });
+
   it("formats DOCX date values as ISO dates", async () => {
     const bytes = await archive(docxXml(paragraph("Event Date:")));
     const structure: TemplateStructure = {
@@ -80,26 +95,75 @@ describe("template structure and filling", () => {
   it("fills twelve XLSX rows, expands SUM, and preserves template styles, merges, and recalculation", async () => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet("Report");
-    sheet.addRow(["Name", "Amount"]);
-    const templateRow = sheet.addRow([null, null]);
+    sheet.addRow(["Date", "Category", "Description", "Payee", "Amount"]);
+    const templateRow = sheet.addRow([null, null, null, null, null]);
     templateRow.font = { bold: true };
-    templateRow.getCell(2).numFmt = '"₱"#,##0.00';
-    templateRow.getCell(2).border = { bottom: { style: "thin" } };
-    sheet.addRow(["Total", { formula: "SUM(B2:B2)" }]);
-    sheet.mergeCells("A1:B1");
+    templateRow.getCell(5).numFmt = '"₱"#,##0.00';
+    templateRow.getCell(5).border = { bottom: { style: "thin" } };
+    sheet.addRow(["Total", null, null, null, { formula: "SUM(E2:E2)" }]);
+    sheet.mergeCells("A1:E1");
     const source = new Uint8Array(await workbook.xlsx.writeBuffer());
     const structure: TemplateStructure = { format: "xlsx", warnings: [], targets: [{
-      id: "s:Report!rows:1", label: "Name · Amount", kind: "rows", templateRow: 2, totalRow: 3, totalColumns: [1],
-      columns: [{ index: 0, label: "Name" }, { index: 1, label: "Amount" }],
+      id: "s:Report!rows:1", label: "Date · Category · Description · Payee · Amount", kind: "rows", templateRow: 2, totalRow: 3, totalColumns: [4],
+      columns: [
+        { index: 0, label: "Date" },
+        { index: 1, label: "Category" },
+        { index: 2, label: "Description" },
+        { index: 3, label: "Payee" },
+        { index: 4, label: "Amount" },
+      ],
     }] };
-    const output = await fillXlsx(source, structure, { "s:Report!rows:1": { value: Array.from({ length: 12 }, (_, index) => ({ name: `Expense ${index}`, amount: 250 })), type: "rows" } });
+    const expenses = Array.from({ length: 12 }, (_, index) => ({
+      date: `2026-05-${String(index + 1).padStart(2, "0")}`,
+      category: `Category ${index}`,
+      description: `Expense ${index}`,
+      counterparty: `Payee ${index}`,
+      amountCentavos: (index + 1) * 250,
+    }));
+    const output = await fillXlsx(
+      source,
+      structure,
+      { "s:Report!rows:1": { value: expenses, type: "rows" } },
+      { "s:Report!rows:1": {
+        "0": "ledger.expenses[].date",
+        "1": "ledger.expenses[].category",
+        "2": "ledger.expenses[].description",
+        "3": "ledger.expenses[].counterparty",
+        "4": "ledger.expenses[].amountCentavos",
+      } },
+    );
     const result = new ExcelJS.Workbook();
     await result.xlsx.load(Buffer.from(output) as unknown as Parameters<typeof result.xlsx.load>[0]);
     const filled = result.getWorksheet("Report")!;
-    expect(filled.getCell("B14").value).toMatchObject({ formula: "SUM(B2:B13)" });
+    expect(filled.getCell("E14").value).toMatchObject({ formula: "SUM(E2:E13)" });
     expect(filled.getRow(2).font.bold).toBe(true);
-    expect(filled.getCell("B2").numFmt).toBe('"₱"#,##0.00');
-    expect(filled.model.merges).toContain("A1:B1");
+    expect(filled.getCell("E2").numFmt).toBe('"₱"#,##0.00');
+    expect(filled.model.merges).toContain("A1:E1");
+    expenses.forEach((expense, index) => {
+      const row = filled.getRow(index + 2);
+      expect(row.getCell(1).value).toBeInstanceOf(Date);
+      expect((row.getCell(1).value as Date).toISOString().slice(0, 10)).toBe(expense.date);
+      expect(row.getCell(2).value).toBe(expense.category);
+      expect(row.getCell(3).value).toBe(expense.description);
+      expect(row.getCell(4).value).toBe(expense.counterparty);
+      expect(row.getCell(5).value).toBe(expense.amountCentavos / 100);
+    });
+    const preview = await previewXlsx(
+      source,
+      structure,
+      { "s:Report!rows:1": { value: expenses, type: "rows" } },
+      [],
+      { "s:Report!rows:1": {
+        "0": "ledger.expenses[].date",
+        "1": "ledger.expenses[].category",
+        "2": "ledger.expenses[].description",
+        "3": "ledger.expenses[].counterparty",
+        "4": "ledger.expenses[].amountCentavos",
+      } },
+    );
+    const previewRows = preview.sheets[0]?.rows ?? [];
+    expect(previewRows).toHaveLength(14);
+    expect(previewRows.slice(1, 13).map((row) => row[0]?.v)).toEqual(expenses.map((expense) => expense.date));
     const outputZip = await JSZip.loadAsync(output);
     const workbookXml = await outputZip.file("xl/workbook.xml")!.async("string");
     expect(workbookXml).toMatch(/fullCalcOnLoad="1"/);
@@ -131,6 +195,24 @@ describe("template structure and filling", () => {
       expect.objectContaining({ missing: true }),
       expect.objectContaining({ missing: true }),
     ]);
+  });
+
+  it("formats XLSX preview values and renders merged cells once with spans", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Liquidation");
+    sheet.getCell("A1").value = "SCOA LIQUIDATION REPORT";
+    sheet.mergeCells("A1:F1");
+    sheet.getCell("A2").value = new Date("2026-05-10T00:00:00.000Z");
+    sheet.getCell("A2").numFmt = "yyyy-mm-dd";
+    sheet.getCell("B2").value = 2200;
+    sheet.getCell("B2").numFmt = '"₱"#,##0.00';
+    const structure: TemplateStructure = { format: "xlsx", warnings: [], targets: [] };
+    const preview = await previewXlsx(new Uint8Array(await workbook.xlsx.writeBuffer()), structure, {});
+    const rows = preview.sheets[0]?.rows ?? [];
+    expect(rows[0]?.[0]).toMatchObject({ v: "SCOA LIQUIDATION REPORT", colSpan: 6 });
+    expect(rows[0]?.slice(1).every((cell) => cell.skip)).toBe(true);
+    expect(rows[1]?.[0]?.v).toBe("2026-05-10");
+    expect(rows[1]?.[1]?.v).toBe("₱2,200.00");
   });
 
   it("rejects OLE files, warns on XLSM, maps Total Expenses, and never puts sample values in mapping prompts", async () => {
@@ -231,5 +313,55 @@ describe("template structure and filling", () => {
     expect(result.kept).toHaveLength(4);
     expect(result.added[0]?.label).toBe("Adviser contact number:");
     expect(result.removed.find((item) => item.label === "Total Expenses:")).toBeTruthy();
+  });
+
+  it("remaps repeating-column fields by label when column positions change", () => {
+    const oldStructure: TemplateStructure = {
+      format: "xlsx",
+      warnings: [],
+      targets: [{
+        id: "s:Report!rows:3",
+        label: "Date · Category · Amount",
+        kind: "rows",
+        columns: [
+          { index: 0, label: "Date" },
+          { index: 1, label: "Category" },
+          { index: 2, label: "Amount" },
+        ],
+      }],
+    };
+    const newStructure: TemplateStructure = {
+      format: "xlsx",
+      warnings: [],
+      targets: [{
+        id: "s:Report!rows:4",
+        label: "Category · Date · Amount",
+        kind: "rows",
+        columns: [
+          { index: 0, label: "Category" },
+          { index: 1, label: "Date" },
+          { index: 2, label: "Amount" },
+        ],
+      }],
+    };
+    const result = remapByLabel({
+      structure: oldStructure,
+      mapping: {
+        "s:Report!rows:3": {
+          field: "ledger.expenses[]",
+          columns: {
+            "0": "ledger.expenses[].occurredOn",
+            "1": "ledger.expenses[].category",
+            "2": "ledger.expenses[].amountCentavos",
+          },
+        },
+      },
+    }, newStructure);
+
+    expect(result.mapping["s:Report!rows:4"]?.columns).toEqual({
+      "0": "ledger.expenses[].category",
+      "1": "ledger.expenses[].occurredOn",
+      "2": "ledger.expenses[].amountCentavos",
+    });
   });
 });

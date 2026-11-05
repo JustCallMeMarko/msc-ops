@@ -3,12 +3,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import ReactMarkdown from "react-markdown";
 import "react-pdf/dist/Page/TextLayer.css";
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, ListUnorderedIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { apiFetch } from "@/lib/api-client";
+import { renderCitedMarkdown } from "@/components/docs/citation-markdown";
 import { escapeDocumentText, renderDocumentHighlight } from "@/lib/docs/highlight";
 import { isReadableHeading, sectionSuggestionLabel, suggestionHeading } from "@/lib/docs/headings";
 
@@ -428,7 +428,7 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
             </div>}
             {messages.map((message, index) => <div key={`${index}-${message.role}`} className={`max-w-full rounded-lg p-3 text-sm ${message.role === "user" ? "ml-6 bg-secondary" : "mr-2 border border-border bg-card"}`}>
               {message.role === "assistant" && message.bestMatch && <BestMatchCard match={message.bestMatch} onShow={() => chooseCitation({ ...message.bestMatch!, n: 1 })} />}
-              {message.role === "assistant" && message.content ? renderCitedMarkdown(message.content, message.sources ?? [], chooseCitation) : message.role === "user" ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
+              {message.role === "assistant" && message.content ? renderCitedMarkdown(message.content, message.sources ?? [], (source) => chooseCitation(source ? { ...source, chunkId: "chunkId" in source && typeof source.chunkId === "string" ? source.chunkId : "" } : undefined)) : message.role === "user" ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
               {message.role === "assistant" && message.sources?.length ? <div className="mt-3 border-t border-border pt-2"><p className="mb-1 text-xs font-semibold text-muted-foreground">Sources</p>{message.sources.map((source) => <button key={`${source.n}-${source.chunkId}`} type="button" className="mr-2 text-xs text-primary underline" onClick={() => chooseCitation(source)}>[{source.n}] {source.title ?? "Document"} · p.{source.page}</button>)}</div> : null}
               {message.partial && <Button size="sm" variant="outline" className="mt-2" onClick={() => void submit(messages[index - 1]?.content)}>Retry</Button>}
             </div>)}
@@ -445,25 +445,6 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
         </div>
       </aside>
     </div>
-  </div>;
-}
-
-function renderCitedMarkdown(content: string, sources: Source[], onCitation: (source?: Source) => void) {
-  const markdown = content.replace(/\[(\d+)\](?!\s*\()/g, (_, number: string) => `[${number}](https://msc-citation.invalid/${number})`);
-  return <div className="prose prose-sm max-w-none dark:prose-invert">
-    <ReactMarkdown components={{
-      a: ({ href, children }) => {
-        const citation = /^https:\/\/msc-citation\.invalid\/(\d+)$/.exec(href ?? "");
-        if (citation) {
-          const number = Number(citation[1]);
-          const source = sources.find((item) => item.n === number);
-          return <button type="button" title={source?.auto ? "Matched automatically" : undefined} onClick={() => onCitation(source)} disabled={!source} className={`mx-0.5 inline-flex rounded px-1.5 py-0.5 text-xs font-semibold align-baseline ${source?.auto ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary"}`}>[{number}]</button>;
-        }
-        return href && /^https?:\/\//i.test(href)
-          ? <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
-          : <>{children}</>;
-      }
-    }}>{markdown}</ReactMarkdown>
   </div>;
 }
 

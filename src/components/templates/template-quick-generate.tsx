@@ -1,8 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { toast } from "sonner";
 import { ChevronDownIcon } from "@primer/octicons-react";
 import { apiFetch } from "@/lib/api-client";
@@ -11,9 +10,10 @@ import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { TemplateGeneration } from "@/components/templates/template-generation";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@/components/ui/sheet";
 
 type Kind = "activity_proposal" | "par" | "guest_list" | "booth_declaration" | "letter_of_explanation" | "liquidation" | "financial_statement" | "budget_proposal";
-type Template = { id: string; name: string; kind: Kind; active: boolean; mappingConfirmedAt: string | null; structure: { targets: Array<{ id: string; label: string; kind: string }> }; mapping: Record<string, { field?: string; skipped?: boolean }> };
+type Template = { id: string; name: string; kind: Kind; source?: string; version?: number; active: boolean; mappingConfirmedAt: string | null; structure: { targets: Array<{ id: string; label: string; kind: string }> }; mapping: Record<string, { field?: string; skipped?: boolean }> };
 type PacketKind = "pre_event" | "post_event" | "scoa_audit";
 
 const labels: Record<Kind, string> = {
@@ -32,8 +32,10 @@ export function TemplateQuickGenerate({ surface, event }: {
   event?: { id: string; name: string };
 }) {
   const router = useRouter();
+  const params = useSearchParams();
   const [templates, setTemplates] = useState<Template[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
   const [pendingPacket, setPendingPacket] = useState<PacketKind | null>(null);
   const [termStart, setTermStart] = useState("");
   const [termEnd, setTermEnd] = useState("");
@@ -46,6 +48,16 @@ export function TemplateQuickGenerate({ surface, event }: {
     }).catch(() => { if (current) setTemplates([]); });
     return () => { current = false; };
   }, []);
+  useEffect(() => {
+    const requestedTemplate = params.get("generate");
+    const template = templates.find((row) => row.id === requestedTemplate && row.active && Boolean(row.mappingConfirmedAt));
+    if (template) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Open the template requested by the chat action URL.
+      setSelectedId(template.id);
+      setPendingPacket(null);
+      setSheetOpen(true);
+    }
+  }, [params, templates]);
 
   const kinds: Kind[] = surface === "events"
     ? ["activity_proposal", "par", "guest_list", "booth_declaration", "letter_of_explanation"]
@@ -89,25 +101,32 @@ export function TemplateQuickGenerate({ surface, event }: {
             key={kind}
             disabled={!template}
             title={!template ? "Upload or map this template first" : undefined}
-            onSelect={() => { if (template) { setSelectedId(template.id); setPendingPacket(null); setError(""); } }}
+            onSelect={() => { if (template) { setSelectedId(template.id); setPendingPacket(null); setError(""); setSheetOpen(true); } }}
           >{labels[kind]}{!template ? " · Upload or map first" : ""}</DropdownMenuItem>;
         })}
         {surface === "events" ? <>
-          <DropdownMenuItem onSelect={() => { setPendingPacket("pre_event"); setSelectedId(null); }}>Pre-event packet</DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => { setPendingPacket("post_event"); setSelectedId(null); }}>Post-event packet</DropdownMenuItem>
-        </> : <DropdownMenuItem onSelect={() => { setPendingPacket("scoa_audit"); setSelectedId(null); }}>SCOA audit packet</DropdownMenuItem>}
+          <DropdownMenuItem onSelect={() => { setPendingPacket("pre_event"); setSelectedId(null); setSheetOpen(true); }}>Pre-event packet</DropdownMenuItem>
+          <DropdownMenuItem onSelect={() => { setPendingPacket("post_event"); setSelectedId(null); setSheetOpen(true); }}>Post-event packet</DropdownMenuItem>
+        </> : <DropdownMenuItem onSelect={() => { setPendingPacket("scoa_audit"); setSelectedId(null); setSheetOpen(true); }}>SCOA audit packet</DropdownMenuItem>}
       </DropdownMenuContent>
     </DropdownMenu>
-    <Link className="text-xs text-primary underline" href="/templates">Upload or map a template</Link>
-    {selectedId && (() => {
-      const template = templates.find((row) => row.id === selectedId);
-      return template ? <TemplateGeneration templateId={template.id} active={template.active && Boolean(template.mappingConfirmedAt)} mapping={template.mapping} targets={template.structure.targets} initialEventId={event?.id} /> : null;
-    })()}
-    {pendingPacket && <Card className="space-y-3 p-4">
-      <div><h2 className="font-medium">Create {pendingPacket.replaceAll("_", " ")} packet?</h2><p className="text-sm text-muted-foreground">{event ? `For ${event.name}.` : "Choose the term range to include."} The packet will be saved to Files.</p></div>
-      {pendingPacket === "scoa_audit" && <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Term start<Input type="date" value={termStart} onChange={(e) => setTermStart(e.target.value)} /></label><label className="text-sm">Term end<Input type="date" value={termEnd} onChange={(e) => setTermEnd(e.target.value)} /></label></div>}
-      <div className="flex gap-2"><Button disabled={busy || pendingPacket === "scoa_audit" && (!termStart || !termEnd || termEnd < termStart)} onClick={() => void makePacket()}>{busy ? "Creating…" : "Confirm"}</Button><Button variant="outline" disabled={busy} onClick={() => setPendingPacket(null)}>Cancel</Button></div>
-      {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
-    </Card>}
+    <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+      <SheetContent side="right">
+        <SheetHeader>
+          <SheetTitle>{selectedId ? templates.find((row) => row.id === selectedId)?.name ?? "Generate document" : pendingPacket ? `Create ${pendingPacket.replaceAll("_", " ")} packet` : "Generate"}</SheetTitle>
+          <SheetDescription>{selectedId ? (() => { const template = templates.find((row) => row.id === selectedId); return template ? `v${template.version ?? 1} · ${template.source ?? "org"}` : "Review the filled preview before saving."; })() : event ? `For ${event.name}.` : "Choose the term range to include."}</SheetDescription>
+        </SheetHeader>
+        {selectedId && (() => {
+          const template = templates.find((row) => row.id === selectedId);
+          return template ? <TemplateGeneration templateId={template.id} active={template.active && Boolean(template.mappingConfirmedAt)} mapping={template.mapping} targets={template.structure.targets} initialEventId={event?.id} /> : null;
+        })()}
+        {pendingPacket && <Card className="space-y-3 p-4">
+          <div><h2 className="font-medium">Create {pendingPacket.replaceAll("_", " ")} packet?</h2><p className="text-sm text-muted-foreground">{event ? `For ${event.name}.` : "Choose the term range to include."} The packet will be saved to Files.</p></div>
+          {pendingPacket === "scoa_audit" && <div className="grid gap-3 sm:grid-cols-2"><label className="text-sm">Term start<Input type="date" value={termStart} onChange={(e) => setTermStart(e.target.value)} /></label><label className="text-sm">Term end<Input type="date" value={termEnd} onChange={(e) => setTermEnd(e.target.value)} /></label></div>}
+          <div className="flex gap-2"><Button disabled={busy || pendingPacket === "scoa_audit" && (!termStart || !termEnd || termEnd < termStart)} onClick={() => void makePacket()}>{busy ? "Creating…" : "Confirm"}</Button><Button variant="outline" disabled={busy} onClick={() => { setPendingPacket(null); setSheetOpen(false); }}>Cancel</Button></div>
+          {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        </Card>}
+      </SheetContent>
+    </Sheet>
   </div>;
 }

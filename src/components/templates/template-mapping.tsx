@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CheckIcon, XIcon } from "@primer/octicons-react";
@@ -10,12 +10,32 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Combobox } from "@/components/ui/combobox";
 import { TemplateGeneration } from "@/components/templates/template-generation";
+import type { GridPreviewCell } from "@/lib/templates/types";
 
-type Target = { id: string; label: string; kind: string; columns?: Array<{ index: number; label: string }> };
+type Target = { id: string; label: string; kind: string; templateRow?: number; columns?: Array<{ index: number; label: string }> };
 type MappingValue = { field?: string; confidence?: number; skipped?: boolean; columns?: Record<string, string> };
 type DictionaryField = { key: string; label: string; type: string; synonyms: string[]; columns?: Array<{ key: string; label: string; type: string; synonyms?: string[] }> };
 type TemplateInfo = { id: string; name: string; kind: string; format: string; fileId: string; version: number; active: boolean; previousTemplateId: string | null; mappingConfirmedAt: string | null; structure: { targets: Target[] }; mapping: Record<string, MappingValue> };
-type FilePreview = { type: string; html?: string; sheets?: Array<{ name: string; rows: unknown[][] }> };
+type FilePreview = { type: string; html?: string; sheets?: Array<{ name: string; rows: GridPreviewCell[][] }> };
+
+function columnAddress(column: number) {
+  let address = "";
+  let value = column;
+  while (value > 0) {
+    const remainder = (value - 1) % 26;
+    address = String.fromCharCode(65 + remainder) + address;
+    value = Math.floor((value - 1) / 26);
+  }
+  return address;
+}
+
+function gridTarget(targets: Target[], sheet: string, row: number, column: number) {
+  const address = `${columnAddress(column + 1)}${row + 1}`;
+  return targets.find((target) => target.id === `s:${sheet}!${address}`)
+    ?? targets.find((target) => target.id.startsWith(`s:${sheet}!rows:`)
+      && target.templateRow === row + 1
+      && target.columns?.some((item) => item.index === column));
+}
 
 function askKey(label: string) {
   const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "").slice(0, 56);
@@ -34,6 +54,9 @@ export function TemplateMapping({ id }: { id: string }) {
   const [onlyUnmapped, setOnlyUnmapped] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const docxPreviewRef = useRef<HTMLElement | null>(null);
+  const xlsxPreviewRef = useRef<HTMLDivElement | null>(null);
+  const mappingRowsRef = useRef(new Map<string, HTMLDivElement>());
 
   useEffect(() => {
     let current = true;
@@ -55,7 +78,7 @@ export function TemplateMapping({ id }: { id: string }) {
     return () => { current = false; };
   }, [id]);
 
-  const targets = template?.structure.targets ?? [];
+  const targets = useMemo(() => template?.structure.targets ?? [], [template?.structure.targets]);
   const visible = onlyUnmapped ? targets.filter((target) => !mapping[target.id]?.field && !mapping[target.id]?.skipped) : targets;
   const options = useMemo(() => dictionary.map((field) => ({ value: field.key, label: `${field.label} · ${field.type}` })), [dictionary]);
   const complete = targets.every((target) => Boolean(mapping[target.id]?.field || mapping[target.id]?.skipped));
@@ -69,6 +92,71 @@ export function TemplateMapping({ id }: { id: string }) {
       removed: oldLabels.filter((label) => !newLabels.includes(label)),
     };
   }, [previous, template]);
+
+  useEffect(() => {
+    const container = docxPreviewRef.current;
+    if (!container || preview?.type !== "docx") return;
+    const cleanups: Array<() => void> = [];
+    const paragraphs = container.querySelectorAll<HTMLElement>("p");
+    const tables = container.querySelectorAll<HTMLTableElement>("table");
+    targets.forEach((target, index) => {
+      let element: HTMLElement | null = null;
+      const paragraph = /^p:(\d+)$/.exec(target.id);
+      const cell = /^t:(\d+):r:(\d+):c:(\d+)$/.exec(target.id);
+      const rows = /^t:(\d+):rows$/.exec(target.id);
+      if (paragraph) element = paragraphs[Number(paragraph[1])] ?? null;
+      else if (cell) {
+        const row = tables[Number(cell[1])]?.rows[Number(cell[2])];
+        element = row?.cells[Number(cell[3])] ?? null;
+      } else if (rows) {
+        element = tables[Number(rows[1])]?.rows[target.templateRow ?? 1] ?? null;
+      }
+      if (!element) return;
+
+      const badge = document.createElement("button");
+      badge.type = "button";
+      badge.className = "mr-2 inline-flex h-5 min-w-5 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-semibold text-primary-foreground align-middle";
+      badge.textContent = String(index + 1);
+      badge.setAttribute("aria-label", `Select target ${index + 1}: ${target.label}`);
+      const select = () => {
+        setOnlyUnmapped(false);
+        setSelected(target.id);
+      };
+      const onClick = (event: Event) => {
+        event.stopPropagation();
+        select();
+      };
+      badge.addEventListener("click", onClick);
+      element.addEventListener("click", select);
+      element.dataset.previewTarget = target.id;
+      element.classList.add("outline", "outline-1", "outline-primary/60", "outline-offset-1", "cursor-pointer");
+      const badgeHost = element instanceof HTMLTableRowElement ? element.cells[0] ?? element : element;
+      badgeHost.prepend(badge);
+      if (target.id === selected) element.classList.add("ring-2", "ring-primary");
+      cleanups.push(() => {
+        badge.removeEventListener("click", onClick);
+        element?.removeEventListener("click", select);
+        badge.remove();
+        element?.removeAttribute("data-preview-target");
+        element?.classList.remove("outline", "outline-1", "outline-primary/60", "outline-offset-1", "cursor-pointer", "ring-2", "ring-primary");
+      });
+    });
+    return () => cleanups.forEach((cleanup) => cleanup());
+  }, [preview?.html, preview?.type, selected, targets]);
+
+  useEffect(() => {
+    if (!selected) return;
+    mappingRowsRef.current.get(selected)?.scrollIntoView({ block: "nearest" });
+    const previewRoot = preview?.type === "docx" ? docxPreviewRef.current : xlsxPreviewRef.current;
+    const target = [...(previewRoot?.querySelectorAll<HTMLElement>("[data-preview-target]") ?? [])]
+      .find((element) => element.dataset.previewTarget === selected);
+    target?.scrollIntoView({ block: "nearest" });
+  }, [selected, preview]);
+
+  function selectTarget(targetId: string) {
+    setOnlyUnmapped(false);
+    setSelected(targetId);
+  }
 
   function setField(target: Target, field: string) {
     setMapping((current) => ({
@@ -120,8 +208,16 @@ export function TemplateMapping({ id }: { id: string }) {
     <div className="grid gap-4 xl:grid-cols-[1.05fr_1fr]">
       <Card className="min-h-[560px] overflow-auto p-4">
         <h2 className="mb-3 font-semibold">Template preview</h2>
-        {preview?.type === "docx" && <article className="prose prose-sm max-w-none dark:prose-invert" dangerouslySetInnerHTML={{ __html: preview.html ?? "" }} />}
-        {preview?.type === "xlsx" && preview.sheets?.map((sheet) => <div key={sheet.name} className="mb-5"><h3 className="mb-2 text-sm font-medium">{sheet.name}</h3><div className="overflow-auto"><table className="border-collapse text-xs"><tbody>{sheet.rows.map((row, ri) => <tr key={ri}>{row.map((raw, ci) => { const cell = raw && typeof raw === "object" ? raw as { v?: unknown; missing?: boolean; targetId?: string } : { v: raw }; return <td key={ci} onClick={() => cell.targetId && setSelected(cell.targetId)} className={`max-w-48 cursor-pointer border border-border px-2 py-1 ${cell.missing ? "bg-red-500/15 ring-1 ring-red-500" : ""} ${cell.targetId === selected ? "outline outline-2 outline-primary" : ""}`}>{String(cell.v ?? "")}</td>; })}</tr>)}</tbody></table></div></div>)}
+        {preview?.type === "docx" && <article ref={docxPreviewRef} className="prose prose-sm max-w-none dark:prose-invert [&_table]:w-full [&_table]:border-collapse [&_table]:text-xs [&_th]:border [&_th]:border-border [&_th]:bg-secondary/60 [&_th]:px-2 [&_th]:py-1 [&_td]:border [&_td]:border-border [&_td]:px-2 [&_td]:py-1" dangerouslySetInnerHTML={{ __html: preview.html ?? "" }} />}
+        {preview?.type === "xlsx" && preview.sheets?.map((sheet) => <div key={sheet.name} className="mb-5"><h3 className="mb-2 text-sm font-medium">{sheet.name}</h3><div ref={xlsxPreviewRef} className="overflow-auto"><table className="border-collapse text-xs"><tbody>{sheet.rows.map((row, ri) => <tr key={ri}>{row.map((cell, ci) => {
+          if (cell.skip) return null;
+          const target = gridTarget(targets, sheet.name, ri, ci);
+          const number = target ? targets.indexOf(target) + 1 : null;
+          return <td key={ci} colSpan={cell.colSpan} rowSpan={cell.rowSpan} data-preview-target={target?.id} onClick={() => target && selectTarget(target.id)} className={`relative max-w-48 cursor-pointer border border-border px-2 py-1 ${cell.missing ? "bg-red-500/15 ring-1 ring-red-500" : ""} ${target?.id === selected ? "outline outline-2 outline-primary" : target ? "outline outline-1 outline-primary/50" : ""}`}>
+            {number && <span className="mr-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[9px] font-semibold text-primary-foreground">{number}</span>}
+            {String(cell.v ?? "")}
+          </td>;
+        })}</tr>)}</tbody></table></div></div>)}
         {!preview && <p className="text-sm text-muted-foreground">Preview unavailable.</p>}
       </Card>
       <Card className="space-y-3 p-4">
@@ -129,10 +225,11 @@ export function TemplateMapping({ id }: { id: string }) {
         {noAIConfigured && <p className="rounded-md bg-secondary/60 px-3 py-2 text-sm text-muted-foreground">Mapped by label matching. Check the fields below.</p>}
         {visible.length === 0 && <p className="py-8 text-center text-sm text-muted-foreground">Every target is mapped or explicitly skipped.</p>}
         <div className="max-h-[680px] space-y-2 overflow-auto pr-1">
-          {visible.map((target, index) => {
+          {visible.map((target) => {
             const value = mapping[target.id] ?? {};
-            return <div key={target.id} onClick={() => setSelected(target.id)} className={`rounded-md border p-3 ${selected === target.id ? "border-primary ring-1 ring-primary/40" : "border-border"}`}>
-              <div className="mb-2 flex items-start justify-between gap-2"><div><span className="mr-2 text-xs text-muted-foreground">{index + 1} · {target.id}</span><p className="font-medium">{target.label}</p></div>{value.confidence !== undefined && <span className={`mt-1 h-2.5 w-2.5 rounded-full ${value.confidence >= 0.75 ? "bg-emerald-500" : value.confidence >= 0.5 ? "bg-amber-500" : "bg-red-500"}`} title={`Confidence ${Math.round(value.confidence * 100)}%`} />}</div>
+            const number = targets.indexOf(target) + 1;
+            return <div key={target.id} ref={(node) => { if (node) mappingRowsRef.current.set(target.id, node); else mappingRowsRef.current.delete(target.id); }} onClick={() => selectTarget(target.id)} className={`rounded-md border p-3 ${selected === target.id ? "border-primary ring-1 ring-primary/40" : "border-border"}`}>
+              <div className="mb-2 flex items-start justify-between gap-2"><div><span className="mr-2 text-xs text-muted-foreground">{number} · {target.id}</span><p className="font-medium">{target.label}</p></div>{value.confidence !== undefined && <span className={`mt-1 h-2.5 w-2.5 rounded-full ${value.confidence >= 0.75 ? "bg-emerald-500" : value.confidence >= 0.5 ? "bg-amber-500" : "bg-red-500"}`} title={`Confidence ${Math.round(value.confidence * 100)}%`} />}</div>
               <Combobox options={options} value={value.field?.startsWith("ask.") ? "" : value.field} placeholder="Choose a field…" onChange={(field) => setField(target, field)} />
               <div className="mt-2 flex gap-2"><Button size="sm" variant={value.field?.startsWith("ask.") ? "default" : "outline"} onClick={() => setField(target, askKey(target.label))}>Ask when generating</Button><Button size="sm" variant={value.skipped ? "default" : "outline"} onClick={() => setField(target, "")}>Leave empty</Button></div>
               {target.columns?.length ? <div className="mt-3 space-y-2 border-t border-border pt-3"><p className="text-xs font-medium text-muted-foreground">Repeating columns</p>{target.columns.map((column) => {

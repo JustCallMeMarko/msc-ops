@@ -7,6 +7,7 @@ import { getDataDir } from "@/lib/data-dir";
 import { getDb } from "@/lib/db/client";
 import { files } from "@/lib/db/schema";
 import { readFileBlob } from "@/lib/files/storage";
+import { worksheetPreviewGrid } from "@/lib/templates/xlsx-preview";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -36,16 +37,7 @@ export async function GET(_request: Request, context: Context) {
       type: "xlsx",
       sheets: workbook.worksheets.map((worksheet) => ({
         name: worksheet.name,
-        rows: Array.from({ length: worksheet.actualRowCount }, (_, rowIndex) => {
-          const row = worksheet.getRow(rowIndex + 1);
-          return Array.from({ length: worksheet.actualColumnCount }, (_, columnIndex) => {
-            const value = row.getCell(columnIndex + 1).value;
-            if (value instanceof Date) return value.toISOString().slice(0, 10);
-            if (value && typeof value === "object" && "result" in value) return value.result ?? null;
-            if (value && typeof value === "object" && "formula" in value) return `=${String(value.formula)}`;
-            return value ?? null;
-          });
-        }),
+        rows: worksheetPreviewGrid(worksheet),
       })),
     });
   }

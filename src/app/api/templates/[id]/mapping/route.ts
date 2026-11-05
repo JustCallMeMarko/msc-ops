@@ -13,11 +13,13 @@ const fieldSchema = z.union([
   z.enum(DICTIONARY_KEYS),
   z.string().regex(/^ask\.[a-z0-9_]{1,60}$/),
 ]);
+const columnFieldSchema = z.string().refine((value) => /^ask\.[a-z0-9_]{1,60}$/.test(value)
+  || Object.values(dictionaryRegistry).some((entry) => entry.columns?.some((column) => column.key === value)), "Unknown repeating-column field");
 const mappingSchema = z.record(z.string(), z.object({
   field: fieldSchema.optional(),
   confidence: z.number().min(0).max(1).optional(),
   skipped: z.boolean().optional(),
-  columns: z.record(z.string(), fieldSchema).optional(),
+  columns: z.record(z.string(), columnFieldSchema).optional(),
 }).refine((value) => Boolean(value.field) !== Boolean(value.skipped), "Map a field or explicitly leave it empty."));
 
 export async function GET(_request: Request, context: Context) {

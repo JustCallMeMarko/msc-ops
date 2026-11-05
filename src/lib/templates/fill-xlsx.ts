@@ -1,5 +1,6 @@
 import ExcelJS from "exceljs";
 import { validateOfficeArchive } from "./structure";
+import { worksheetPreviewGrid } from "./xlsx-preview";
 import type { GridPreview, TemplateStructure, TemplateTarget } from "./types";
 
 export type TypedTemplateValue = { value: unknown; type?: "text" | "date" | "peso" | "number" | "rows" };
@@ -41,7 +42,8 @@ function columnValues(row: unknown, target: TemplateTarget, columnMap?: Record<s
     if (!row || typeof row !== "object") return undefined;
     const record = row as Record<string, unknown>;
     const explicit = columnMap?.[String(column.index)];
-    if (explicit && explicit in record) return record[explicit];
+    const explicitKey = explicit?.split(".").at(-1);
+    if (explicitKey && explicitKey in record) return record[explicitKey];
     const normalized = column.label.toLowerCase().replace(/[^a-z0-9]/g, "");
     const key = Object.keys(record).find((name) => name.toLowerCase().replace(/[^a-z0-9]/g, "") === normalized);
     return key ? record[key] : undefined;
@@ -100,8 +102,9 @@ function fillRepeatingRows(
       for (let column = 0; column < rowValues[index]!.length; column += 1) {
         const columnIndex = target.columns?.[column]?.index ?? column;
         const field = columnMap?.[String(columnIndex)];
-        const type = field?.toLowerCase().includes("centavos") ? "peso"
-          : field?.toLowerCase().includes("date") ? "date"
+        const fieldKey = field?.split(".").at(-1)?.toLowerCase();
+        const type = fieldKey?.includes("centavos") ? "peso"
+          : fieldKey && /date|occurredon|startsat|endsat|dueat/.test(fieldKey) ? "date"
             : undefined;
         applyCellValue(row.getCell(columnIndex + 1), rowValues[index]![column], type);
       }
@@ -167,7 +170,13 @@ export async function previewXlsx(
   missing: string[] = [],
   columnMaps: Record<string, Record<string, string>> = {},
 ): Promise<GridPreview> {
-  const filled = await fillXlsx(bytes, structure, values, columnMaps);
+  const previewValues = { ...values };
+  for (const target of structure.targets) {
+    if (target.kind === "rows" && missing.includes(target.id) && previewValues[target.id] === undefined) {
+      previewValues[target.id] = { value: [{}], type: "rows" };
+    }
+  }
+  const filled = await fillXlsx(bytes, structure, previewValues, columnMaps);
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(Buffer.from(filled) as unknown as Parameters<typeof workbook.xlsx.load>[0]);
   const missingIds = new Set(missing);
@@ -178,38 +187,22 @@ export async function previewXlsx(
   return {
     sheets: workbook.worksheets.map((worksheet) => ({
       name: worksheet.name,
-      rows: Array.from({ length: Math.max(
-        worksheet.actualRowCount,
-        ...structure.targets
-          .filter((target) => target.kind === "rows" && target.id.startsWith(`s:${worksheet.name}!`))
-          .map((target) => target.templateRow ?? 0),
-      ) }, (_, rowIndex) => {
-        const row = worksheet.getRow(rowIndex + 1);
-        const repeatingTargets = structure.targets.filter((target) =>
-          target.kind === "rows" && target.id.startsWith(`s:${worksheet.name}!`),
-        );
-        const columnCount = Math.max(
-          worksheet.actualColumnCount,
-          ...repeatingTargets.flatMap((target) => (target.columns ?? []).map((column) => column.index + 1)),
-        );
-        return Array.from({ length: columnCount }, (_, columnIndex) => {
-          const cell = row.getCell(columnIndex + 1);
-          const cellValue = cell.value;
-          const value = cellValue && typeof cellValue === "object" && "result" in cellValue
-            ? cellValue.result as string | number | boolean | null
-            : cellValue && typeof cellValue === "object" && "formula" in cellValue
-              ? `=${String(cellValue.formula)}`
-              : cellValue instanceof Date ? cellValue.toISOString().slice(0, 10)
-                : cellValue as string | number | boolean | null;
-          const id = targetByAddress.get(`${worksheet.name}!${cell.address}`)
-            ?? structure.targets.find((target) => {
-              if (target.kind !== "rows" || !target.id.startsWith(`s:${worksheet.name}!`)) return false;
-              const rowStart = target.templateRow ?? Number(target.id.split(":").at(-1)) + 1;
-              return rowIndex + 1 >= rowStart && Boolean(target.columns?.some((column) => column.index + 1 === columnIndex + 1));
-            })?.id;
-          return { v: value ?? null, missing: Boolean(id && missingIds.has(id)), ...(id ? { targetId: id } : {}) };
-        });
-      }),
+      rows: worksheetPreviewGrid(worksheet).map((row, rowIndex) => row.map((cell, columnIndex) => {
+        if (cell.skip) return cell;
+        const address = worksheet.getCell(rowIndex + 1, columnIndex + 1).address;
+        const id = targetByAddress.get(`${worksheet.name}!${address}`)
+          ?? structure.targets.find((target) => {
+            if (target.kind !== "rows" || !target.id.startsWith(`s:${worksheet.name}!`)) return false;
+            const rowStart = target.templateRow ?? Number(target.id.split(":").at(-1)) + 1;
+            const raw = previewValues[target.id];
+            const rows = raw && typeof raw === "object" && "value" in raw ? (raw as TypedTemplateValue).value : raw;
+            const rowCount = Array.isArray(rows) ? Math.max(rows.length, 1) : 1;
+            return rowIndex + 1 >= rowStart
+              && rowIndex + 1 < rowStart + rowCount
+              && Boolean(target.columns?.some((column) => column.index + 1 === columnIndex + 1));
+          })?.id;
+        return { ...cell, missing: Boolean(id && missingIds.has(id)), ...(id ? { targetId: id } : {}) };
+      })),
     })),
   };
 }

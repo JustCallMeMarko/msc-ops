@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { UploadIcon, FileIcon, CheckCircleFillIcon } from "@primer/octicons-react";
+import { UploadIcon, FileIcon } from "@primer/octicons-react";
 import { apiFetch } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -140,10 +140,10 @@ export default function TemplatesPage() {
         {Object.entries(grouped).map(([group, templates]) => (
           <section key={group}>
             <h2 className="mb-2 text-sm font-semibold">{kindOptions.find((option) => option.value === group)?.label ?? group}</h2>
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-              {templates.map((template) => <Link href={`/templates/${template.id}`} key={template.id} className="rounded-lg border border-border bg-card p-4 transition hover:border-primary/50">
-                <div className="flex items-start justify-between gap-3"><div className="flex gap-2"><FileIcon size={18} className="mt-0.5 text-muted-foreground" /><div><p className="font-medium">{template.name}</p><p className="mt-1 text-xs text-muted-foreground">{template.source.toUpperCase()} · {template.format.toUpperCase()} · v{template.version}</p></div></div>
-                  <span className="flex gap-1">{template.active && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">Active</span>}<span className={`rounded-full px-2 py-0.5 text-xs ${template.mappingConfirmedAt ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-800 dark:text-amber-300"}`}>{template.mappingConfirmedAt ? <CheckCircleFillIcon size={12} /> : "Needs mapping"}</span></span>
+            <div className="divide-y divide-border overflow-hidden rounded-lg border border-border bg-card">
+              {templates.map((template) => <Link href={`/templates/${template.id}`} key={template.id} className="block p-4 transition hover:bg-secondary/40">
+                <div className="flex flex-wrap items-center justify-between gap-3"><div className="flex min-w-0 gap-3"><FileIcon size={18} className="mt-0.5 shrink-0 text-muted-foreground" /><div className="min-w-0"><p className="font-medium">{template.name}</p><p className="mt-1 text-xs text-muted-foreground">{template.source.toUpperCase()} · {template.format.toUpperCase()} · v{template.version}</p></div></div>
+                  <span className="flex shrink-0 gap-1">{template.active && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs">Active</span>}<span className={`rounded-full px-2 py-0.5 text-xs ${template.mappingConfirmedAt ? "bg-emerald-500/10 text-emerald-700 dark:text-emerald-300" : "bg-amber-500/10 text-amber-800 dark:text-amber-300"}`}>{template.mappingConfirmedAt ? "Mapped" : "Needs mapping"}</span></span>
                 </div>
               </Link>)}
             </div>

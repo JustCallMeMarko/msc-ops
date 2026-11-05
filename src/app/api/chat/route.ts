@@ -96,6 +96,22 @@ export async function GET(request: Request) {
   return NextResponse.json({ threads: rows.filter((thread) => thread.title.toLowerCase().includes(query.toLowerCase()) || matchIds.has(thread.id)) });
 }
 
+export async function DELETE(request: Request) {
+  const threadId = new URL(request.url).searchParams.get("threadId");
+  if (!threadId) return NextResponse.json({ error: "A conversation ID is required." }, { status: 400 });
+  const { db } = await getDb();
+  const [thread] = await db.select({ id: chatThreads.id }).from(chatThreads).where(and(
+    eq(chatThreads.id, threadId),
+    eq(chatThreads.scope, "general"),
+    isNull(chatThreads.deletedAt),
+  )).limit(1);
+  if (!thread) return NextResponse.json({ error: "Conversation not found." }, { status: 404 });
+  const deletedAt = new Date();
+  await db.update(chatMessages).set({ deletedAt }).where(and(eq(chatMessages.threadId, threadId), isNull(chatMessages.deletedAt)));
+  await db.update(chatThreads).set({ deletedAt }).where(eq(chatThreads.id, threadId));
+  return NextResponse.json({ deleted: true, threadId });
+}
+
 async function appSummary(cloud: boolean, privateLocal: boolean) {
   const { db } = await getDb();
   const now = new Date();
@@ -154,8 +170,13 @@ async function resolveAction(action: ChatAction, scopeRef: string | null) {
       type: "generate_doc",
       template: { id: template.id, name: template.name, kind: template.kind },
       entity: { type: "event", id: event.id, title: event.name },
+      templateVersion: template.version,
+      templateSource: template.source,
+      outputFilename: `${template.name} - ${event.name} - ${new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(new Date())}.${template.format === "docx" ? "docx" : template.format === "xlsx" ? "xlsx" : "pdf"}`,
       missing: previewResult.missing,
+      missingCount: previewResult.missing.length,
       preview: previewResult.type === "docx" ? previewResult.html : null,
+      copy: `I can generate **${template.name}** (v${template.version}) for **${event.name}**.`,
       change: `Create ${template.name} for ${event.name}`,
       href: `/events/${event.id}`,
     };
@@ -324,10 +345,10 @@ export async function POST(request: Request) {
         n: number, chunkId: sources[number - 1]!.chunkId, documentId: sources[number - 1]!.documentId,
         page: sources[number - 1]!.page, auto: autoSet.has(number),
       }));
-      await db.insert(chatMessages).values({
+      const [assistantMessage] = await db.insert(chatMessages).values({
         threadId: threadId!, role: "assistant", content: answer,
         citations: { items: citations, bestMatch }, docIds, modelKey, partial,
-      });
+      }).returning({ id: chatMessages.id });
       send({ type: "sources", sources: citations.map((citation) => ({ ...sources[citation.n - 1], auto: citation.auto })), bestMatch: bestPayload, partial });
       const actionable = /\b(generate|make|create|prepare|liquidat|deadline|change|move|expense|income|map|upload)\b/i.test(parsed.data.message);
       if (actionable) {
@@ -344,6 +365,11 @@ export async function POST(request: Request) {
         if (proposed.invalid) send({ type: "action_fallback", href: parsed.data.scopeRef?.startsWith("finance") ? "/finance" : "/templates" });
         else if (proposed.action) {
           const action = await resolveAction(proposed.action, parsed.data.scopeRef ?? null);
+          const copy = typeof action === "object" && action && "copy" in action && typeof action.copy === "string" ? action.copy : null;
+          if (copy && assistantMessage) {
+            await db.update(chatMessages).set({ content: copy, citations: { items: [], bestMatch: null } }).where(eq(chatMessages.id, assistantMessage.id));
+            send({ type: "replace", text: copy });
+          }
           send({ type: "action", action, payload: proposed.action });
         }
       }
