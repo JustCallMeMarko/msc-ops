@@ -29,6 +29,13 @@
       "when": 1793834887331,
       "tag": "0003_next_the_hunter",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793837842297,
+      "tag": "0004_even_captain_flint",
+      "breakpoints": true
     }
   ]
 }

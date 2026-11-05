@@ -30,7 +30,8 @@ type InboxPost = {
   id: string; title: string; status: string; caption: string;
   event: { name: string; slug: string } | null;
 };
-type InboxData = Record<"checkin_due" | "overdue" | "due_today" | "due_this_week", InboxTask[]> & { posts_due: InboxPost[] };
+type FinanceInboxItem = { id: string; title: string; detail: string; severity: "critical" | "warning" | "info"; action: { guide: string; step: string } | { href: string } };
+type InboxData = Record<"checkin_due" | "overdue" | "due_today" | "due_this_week", InboxTask[]> & { posts_due: InboxPost[]; finance: FinanceInboxItem[] };
 
 const groupLabels = [
   ["checkin_due", "Check-ins due"],
@@ -226,6 +227,13 @@ export function InboxView() {
         </div>
         <Button size="sm" variant="outline" onClick={() => void copyPostCaption(post)}><CopyIcon size={14} />Copy caption</Button>
         <a href={`/api/posts/${post.id}/kit`} className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground">Download kit</a>
+      </article>)}</div>
+    </section>}
+    {data.finance.length > 0 && <section>
+      <h2 className="mb-3 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Finance · what to do next</h2>
+      <div className="space-y-2">{data.finance.map((item) => <article key={item.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card p-4">
+        <div className="min-w-0 flex-1"><p className="font-medium">{item.title}</p><p className="text-sm text-muted-foreground">{item.detail}</p></div>
+        <Link className="inline-flex h-8 items-center rounded-md border border-border px-3 text-xs hover:bg-secondary" href={"href" in item.action ? item.action.href : `/finance?tab=guides&guide=${item.action.guide}&step=${item.action.step}`}>Open finance</Link>
       </article>)}</div>
     </section>}
   </div>;

@@ -8,6 +8,7 @@ import { AppSidebar } from "@/components/shell/app-sidebar";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { GlobalUploadTray } from "@/components/shell/global-upload-tray";
 import { Topbar } from "@/components/shell/topbar";
+import { FinanceChatPanel } from "@/components/ops/finance-chat-panel";
 
 function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; breadcrumbLabel?: string }) {
   const router = useRouter();
@@ -15,13 +16,14 @@ function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; brea
   const searchParams = useSearchParams();
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
-  const panelOpen = searchParams.get("panel") === "chat";
+  const financeRoute = pathname === "/finance";
+  const panelOpen = searchParams.get("panel") === "chat" || searchParams.get("panel") === "finance-chat";
   const togglePanel = useCallback(() => {
     const params = new URLSearchParams(searchParams.toString());
     if (panelOpen) params.delete("panel");
-    else params.set("panel", "chat");
+    else params.set("panel", financeRoute ? "finance-chat" : "chat");
     router.push(`${pathname}${params.size ? `?${params.toString()}` : ""}`);
-  }, [panelOpen, pathname, router, searchParams]);
+  }, [financeRoute, panelOpen, pathname, router, searchParams]);
 
   useEffect(() => {
     let sequence = "";
@@ -58,8 +60,8 @@ function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; brea
           <main className="min-w-0 flex-1 overflow-y-auto p-6">{children}</main>
           {panelOpen && (
             <aside className="w-[340px] min-w-[240px] resize-x overflow-y-auto border-l border-border bg-card p-4">
-              <div className="mb-3 flex items-center gap-2 font-semibold"><CommentDiscussionIcon size={16} /> AI chat</div>
-              <p className="text-sm text-muted-foreground">AI chat arrives in a later PR.</p>
+              <div className="mb-3 flex items-center gap-2 font-semibold"><CommentDiscussionIcon size={16} /> {financeRoute ? "Finance chat" : "AI chat"}</div>
+              {financeRoute ? <FinanceChatPanel key={searchParams.get("ask") ?? "finance-chat"} initialPrompt={searchParams.get("ask") ?? ""} /> : <p className="text-sm text-muted-foreground">AI chat arrives in a later PR.</p>}
             </aside>
           )}
         </div>
