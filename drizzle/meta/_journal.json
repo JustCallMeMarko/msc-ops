@@ -8,6 +8,48 @@
       "when": 1793827409342,
       "tag": "0000_complex_sir_ram",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1793829933519,
+      "tag": "0001_milky_night_nurse",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793832284380,
+      "tag": "0002_short_proudstar",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793834887331,
+      "tag": "0003_next_the_hunter",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793837842297,
+      "tag": "0004_even_captain_flint",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793841802000,
+      "tag": "0005_cbl_library",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793874948324,
+      "tag": "0006_templates",
+      "breakpoints": true
     }
   ]
 }

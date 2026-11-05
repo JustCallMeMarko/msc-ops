@@ -4,37 +4,28 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 import {
-  BookIcon,
   CalendarIcon,
-  ChecklistIcon,
   CommentDiscussionIcon,
   CreditCardIcon,
   FileDirectoryIcon,
   GearIcon,
   GraphIcon,
   HomeIcon,
-  InboxIcon,
-  PaintbrushIcon,
-  ShieldCheckIcon,
+  MegaphoneIcon,
+  PeopleIcon,
   SidebarCollapseIcon,
-  TasklistIcon,
 } from "@primer/octicons-react";
 import { StatusBar } from "@/components/shell/status-bar";
 
 const items = [
-  { label: "Inbox", href: "/", icon: InboxIcon },
-  { label: "Overview", href: "/overview", icon: GraphIcon },
-  { label: "Tasks", href: "/tasks", icon: TasklistIcon },
-  { label: "Events", href: "/events", icon: CalendarIcon },
-  { label: "Creatives", href: "/creatives", icon: PaintbrushIcon },
-  { label: "Finance", href: "/finance", icon: CreditCardIcon },
-  { label: "CBL", href: "/cbl", icon: BookIcon },
-  { label: "Files", href: "/files", icon: FileDirectoryIcon },
-  { label: "Templates", href: "/templates", icon: ChecklistIcon },
-  { label: "Chat", href: "/chat", icon: CommentDiscussionIcon },
-  { label: "Manual", href: "/manual", icon: BookIcon },
-  { label: "Compliance", href: "/compliance", icon: ShieldCheckIcon },
-  { label: "Settings", href: "/settings/general", icon: GearIcon },
+  { label: "Overview", href: "/overview", icon: GraphIcon, match: ["/overview"] },
+  { label: "People", href: "/committees", icon: PeopleIcon, match: ["/committees", "/tasks"] },
+  { label: "Events", href: "/events", icon: CalendarIcon, match: ["/events"] },
+  { label: "Posts", href: "/creatives", icon: MegaphoneIcon, match: ["/creatives"] },
+  { label: "Finance", href: "/finance", icon: CreditCardIcon, match: ["/finance"] },
+  { label: "Files + templates", href: "/files", icon: FileDirectoryIcon, match: ["/files", "/templates"] },
+  { label: "Chat", href: "/chat", icon: CommentDiscussionIcon, match: ["/chat"] },
+  { label: "Settings", href: "/settings/general", icon: GearIcon, match: ["/settings", "/recovery", "/setup"] },
 ];
 
 export function AppSidebar() {
@@ -43,7 +34,7 @@ export function AppSidebar() {
   return (
     <aside className={`flex h-screen shrink-0 flex-col border-r border-border bg-card transition-[width] ${collapsed ? "w-[68px]" : "w-60"}`}>
       <div className="flex h-14 items-center justify-between border-b border-border px-4">
-        {!collapsed && <Link href="/" className="font-semibold tracking-tight">MSC Ops</Link>}
+        {!collapsed && <Link href="/overview" className="font-semibold tracking-tight">MSC Ops</Link>}
         <button
           type="button"
           aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
@@ -54,8 +45,8 @@ export function AppSidebar() {
         </button>
       </div>
       <nav className="flex-1 space-y-1 overflow-y-auto p-2" aria-label="Primary navigation">
-        {items.map(({ label, href, icon: Icon }) => {
-          const active = href === "/" ? pathname === "/" : pathname === href || pathname.startsWith(`${href}/`);
+        {items.map(({ label, href, icon: Icon, match }) => {
+          const active = match.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
           return (
             <Link
               key={href}

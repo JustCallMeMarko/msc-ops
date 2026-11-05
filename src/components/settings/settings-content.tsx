@@ -2,11 +2,13 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { CheckCircleIcon, CloudIcon, CpuIcon, PencilIcon, PlusIcon, TrashIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Combobox } from "@/components/ui/combobox";
@@ -15,6 +17,10 @@ import { toastUndo } from "@/components/patterns/toast-undo";
 import { apiFetch } from "@/lib/api-client";
 import { isLocalProviderUrl, PROVIDER_TYPES, type ProviderType } from "@/lib/ai/provider-types";
 import { plural } from "@/lib/utils";
+import { DEFAULT_NUDGE_TEMPLATE } from "@/lib/tasks/logic";
+import { DeadlinesContent } from "@/components/settings/deadlines-content";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { UploadDropzone } from "@/components/patterns/upload-dropzone";
 
 type Provider = {
   id: string; name: string; type: ProviderType; baseUrl: string; hasKey: boolean; keyLast4: string | null;
@@ -24,6 +30,9 @@ type SettingValues = {
   "ai.defaults": { chat?: { providerId: string; model: string }; embedding?: { providerId: string; model: string } };
   "privacy.offlineMode": boolean;
   "privacy.sensitiveLocalOnly": boolean;
+  "tasks.nudgeTemplate": string;
+  "brand.kit": { logoFileId?: string; headingFontFileId?: string; bodyFontFileId?: string; frameFileId?: string; colors: Record<"primary" | "secondary" | "accent" | "background" | "text", string> };
+  "creatives.autoSchedule": boolean;
 };
 
 const settingDefaults: SettingValues = {
@@ -31,6 +40,9 @@ const settingDefaults: SettingValues = {
   "ai.defaults": {},
   "privacy.offlineMode": false,
   "privacy.sensitiveLocalOnly": false,
+  "tasks.nudgeTemplate": DEFAULT_NUDGE_TEMPLATE,
+  "brand.kit": { colors: { primary: "#0969da", secondary: "#1f6feb", accent: "#bf8700", background: "#0d1117", text: "#f0f6fc" } },
+  "creatives.autoSchedule": true,
 };
 
 function isValidUrl(value: string): boolean {
@@ -42,7 +54,7 @@ function isValidUrl(value: string): boolean {
 }
 
 const sections = [
-  ["general", "General"], ["ai", "AI"], ["privacy", "Privacy"], ["about", "About"],
+  ["general", "General"], ["deadlines", "Deadlines"], ["brand-kit", "Brand Kit"], ["posting-rules", "Posting rules"], ["ai", "AI"], ["privacy", "Privacy"], ["about", "About"],
 ];
 
 export function SettingsContent({ section, dataDir }: { section: string; dataDir: string }) {
@@ -93,6 +105,7 @@ export function SettingsContent({ section, dataDir }: { section: string; dataDir
       <div className="max-w-4xl space-y-5">
         {section === "general" && <>
           <GeneralSection value={values["org.profile"]} onSave={(value) => patchSetting("org.profile", value)} />
+          <NudgeTemplateSection value={values["tasks.nudgeTemplate"]} onSave={(value) => patchSetting("tasks.nudgeTemplate", value)} />
           <section className="rounded-md border border-border bg-card p-5">
             <h2 className="font-semibold">Appearance</h2>
             <p className="mt-1 text-sm text-muted-foreground">Choose a theme for this workspace.</p>
@@ -116,6 +129,14 @@ export function SettingsContent({ section, dataDir }: { section: string; dataDir
           network={network}
         />}
         {section === "about" && <AboutSection dataDir={dataDir} />}
+        {section === "deadlines" && <DeadlinesContent />}
+        {section === "brand-kit" && <BrandKitSection
+          value={values["brand.kit"]}
+          autoSchedule={values["creatives.autoSchedule"]}
+          onSave={(value) => patchSetting("brand.kit", value)}
+          onAutoSchedule={(value) => patchSetting("creatives.autoSchedule", value)}
+        />}
+        {section === "posting-rules" && <PostingRulesSection />}
         <section className="rounded-md border border-destructive/60 bg-card p-5">
           <h2 className="font-semibold text-destructive">Danger zone</h2>
           <p className="mt-1 text-sm text-muted-foreground">Reset and replace-all actions will be available in a later PR.</p>
@@ -123,6 +144,74 @@ export function SettingsContent({ section, dataDir }: { section: string; dataDir
       </div>
     </div>
   );
+}
+
+type BrandKit = SettingValues["brand.kit"];
+const brandColors = ["primary", "secondary", "accent", "background", "text"] as const;
+const colorSwatches = ["#0969da", "#1f6feb", "#bf8700", "#238636", "#da3633", "#8957e5", "#0d1117", "#f0f6fc"];
+function BrandKitSection({ value, autoSchedule, onSave, onAutoSchedule }: {
+  value: BrandKit; autoSchedule: boolean; onSave: (value: BrandKit) => Promise<void>; onAutoSchedule: (value: boolean) => Promise<void>;
+}) {
+  const [kit, setKit] = useState(value);
+  const [saving, setSaving] = useState(false);
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- Keep the local color editor in sync with saved settings.
+  useEffect(() => { setKit(value); }, [value]);
+  async function save() {
+    setSaving(true);
+    try { await onSave(kit); toast.success("Brand Kit saved."); }
+    catch { toast.error("Could not save Brand Kit."); }
+    finally { setSaving(false); }
+  }
+  async function upload(key: "logoFileId" | "headingFontFileId" | "bodyFontFileId" | "frameFileId", file?: File) {
+    if (!file) return;
+    const form = new FormData(); form.set("file", file); form.set("kind", "creative"); form.set("source", "org");
+    const response = await apiFetch("/api/files", { method: "POST", body: form });
+    if (!response.ok) return toast.error((await response.json()).error ?? "Could not upload Brand Kit asset.");
+    const result = await response.json() as { id: string };
+    setKit((current) => ({ ...current, [key]: result.id }));
+    toast.success("Asset uploaded. Save the Brand Kit to apply it.");
+  }
+  return <div className="space-y-4">
+    <section className="space-y-4 rounded-md border border-border bg-card p-5">
+      <div><h2 className="font-semibold">Brand Kit</h2><p className="mt-1 text-sm text-muted-foreground">Local organization assets and colors used by the creative generator.</p></div>
+      <div className="grid gap-3 sm:grid-cols-2">{[
+        ["Logo", "logoFileId", "image/*"], ["Heading font (TTF/OTF)", "headingFontFileId", ".ttf,.otf"], ["Body font (TTF/OTF)", "bodyFontFileId", ".ttf,.otf"], ["Frame", "frameFileId", "image/*"],
+      ].map(([label, key, accept]) => <div key={key}><UploadDropzone accept={accept} onFiles={(files) => void upload(key as "logoFileId" | "headingFontFileId" | "bodyFontFileId" | "frameFileId", files[0])}>{label}</UploadDropzone>{kit[key as keyof BrandKit] && <p className="mt-1 text-xs text-success">Asset selected</p>}{(key === "logoFileId" || key === "frameFileId") && kit[key] && <Image src={`/api/files/${kit[key]}/content`} alt={`${label} preview`} width={320} height={120} unoptimized className="mt-2 h-20 w-full rounded object-contain" />}</div>)}</div>
+      <div className="grid gap-3 sm:grid-cols-2">{brandColors.map((key) => <div key={key} className="flex items-center justify-between rounded border border-border px-3 py-2"><span className="text-sm capitalize">{key}</span><Popover><PopoverTrigger asChild><Button variant="outline" size="sm"><span className="size-4 rounded border border-border" style={{ backgroundColor: kit.colors[key] }} />{kit.colors[key]}</Button></PopoverTrigger><PopoverContent className="w-64 space-y-3"><Input aria-label={`${key} color hex`} value={kit.colors[key]} onChange={(event) => setKit((current) => ({ ...current, colors: { ...current.colors, [key]: event.target.value } }))} /><div className="grid grid-cols-4 gap-2">{colorSwatches.map((color) => <button key={color} type="button" aria-label={`Use ${color}`} onClick={() => setKit((current) => ({ ...current, colors: { ...current.colors, [key]: color } }))} className="size-8 rounded border border-border" style={{ backgroundColor: color }} />)}</div></PopoverContent></Popover></div>)}</div>
+      <div className="rounded border border-border p-4" style={{ background: kit.colors.background, color: kit.colors.text }}><p style={{ color: kit.colors.accent }} className="text-xs font-semibold">3 DAYS TO GO</p><h3 style={{ color: kit.colors.primary }} className="mt-2 text-2xl font-semibold">Dasmariñas Week</h3><p style={{ color: kit.colors.secondary }} className="mt-1 text-sm">November 14 · Activity Center</p></div>
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3"><label className="flex items-center gap-2 text-sm"><Switch checked={autoSchedule} onCheckedChange={(checked) => void onAutoSchedule(checked).then(() => toast.success(checked ? "Auto-scheduling enabled." : "Auto-scheduling disabled.")).catch(() => toast.error("Could not update auto-scheduling."))} />Generate posting schedules for new events</label><Button disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save Brand Kit"}</Button></div>
+    </section>
+  </div>;
+}
+
+type PostingRuleRow = { id: string; key: string; postType: string; label: string; offsetDays: number; anchor: "event_start" | "event_end"; enabled: boolean };
+function PostingRulesSection() {
+  const [rows, setRows] = useState<PostingRuleRow[] | null>(null);
+  useEffect(() => { void fetch("/api/posting-rules").then((response) => response.json()).then(setRows).catch(() => setRows([])); }, []);
+  async function patch(row: PostingRuleRow, values: Partial<PostingRuleRow>) {
+    const response = await apiFetch(`/api/posting-rules/${row.id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify(values) });
+    if (!response.ok) return toast.error("Could not update posting rule.");
+    const updated = await response.json() as PostingRuleRow;
+    setRows((current) => current?.map((item) => item.id === row.id ? updated : item) ?? []);
+    toast.success("Posting rule saved.");
+  }
+  return <section className="space-y-3 rounded-md border border-border bg-card p-5"><div><h2 className="font-semibold">Posting rules</h2><p className="text-sm text-muted-foreground">Offset-based schedules are generated at 6pm Manila time.</p></div>{!rows ? <div className="h-40 animate-pulse rounded bg-secondary" /> : <div className="divide-y divide-border">{rows.map((row) => <div key={row.id} className="grid gap-2 py-3 md:grid-cols-[1fr_1.3fr_110px_150px_auto]"><Input aria-label={`${row.key} label`} defaultValue={row.label} onBlur={(event) => event.target.value !== row.label && void patch(row, { label: event.target.value })} /><Input aria-label={`${row.key} offset days`} type="number" defaultValue={row.offsetDays} onBlur={(event) => Number(event.target.value) !== row.offsetDays && void patch(row, { offsetDays: Number(event.target.value) })} /><Select value={row.anchor} onValueChange={(anchor) => void patch(row, { anchor: anchor as PostingRuleRow["anchor"] })}><SelectTrigger><span>{row.anchor === "event_start" ? "Event start" : "Event end"}</span></SelectTrigger><SelectContent><SelectItem value="event_start">Event start</SelectItem><SelectItem value="event_end">Event end</SelectItem></SelectContent></Select><span className="self-center text-xs text-muted-foreground">{row.key}</span><Switch checked={row.enabled} onCheckedChange={(enabled) => void patch(row, { enabled })} aria-label={`Enable ${row.label}`} /></div>)}</div>}</section>;
+}
+
+function NudgeTemplateSection({ value, onSave }: { value: string; onSave: (value: string) => Promise<void> }) {
+  const [template, setTemplate] = useState(value);
+  const [saving, setSaving] = useState(false);
+  async function save() {
+    setSaving(true);
+    try { await onSave(template); toast.success("Nudge template saved."); }
+    catch { toast.error("Could not save nudge template."); }
+    finally { setSaving(false); }
+  }
+  return <section className="space-y-3 rounded-md border border-border bg-card p-5">
+    <div><h2 className="font-semibold">Task nudge template</h2><p className="text-sm text-muted-foreground">Available tokens: {"{first_name}"}, {"{title}"}, {"{due}"}, {"{days_left}"}, {"{task_ref}"}.</p></div>
+    <Textarea rows={4} value={template} onChange={(event) => setTemplate(event.target.value)} />
+    <Button disabled={saving || !template.trim()} onClick={() => void save()}>{saving ? "Saving…" : "Save template"}</Button>
+  </section>;
 }
 
 function GeneralSection({ value, onSave }: { value: SettingValues["org.profile"]; onSave: (value: SettingValues["org.profile"]) => Promise<void> }) {

@@ -14,7 +14,7 @@ export function SelectTrigger({ className = "", ...props }: ComponentProps<typeo
       className={`inline-flex h-9 w-full items-center justify-between gap-2 rounded-[6px] border border-input bg-background px-3 text-left text-sm text-foreground ${className}`}
       {...props}
     >
-      {props.children}
+      <span className="inline-flex items-center gap-2">{props.children}</span>
       <SelectPrimitive.Icon><ChevronDownIcon size={16} /></SelectPrimitive.Icon>
     </SelectPrimitive.Trigger>
   );

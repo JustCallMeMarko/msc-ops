@@ -1,2 +1,6 @@
-import { PlaceholderPage } from "@/components/shell/placeholder-page";
-export default function FinancePage() { return <PlaceholderPage title="Finance" />; }
+import { WorkspaceShell } from "@/components/shell/workspace-shell";
+import { FinanceView } from "@/components/ops/finance-view";
+
+export default function FinancePage() {
+  return <WorkspaceShell><FinanceView /></WorkspaceShell>;
+}

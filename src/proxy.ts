@@ -2,10 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { checkRequest } from "@/lib/security/request-guard";
 
 function makeCsp(nonce: string): string {
-  const scriptSrc = `script-src 'self' 'nonce-${nonce}' 'strict-dynamic'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`;
+  // Local PDF.js workers and Tesseract OCR compile bundled WebAssembly files.
+  const scriptSrc = `script-src 'self' 'nonce-${nonce}' 'strict-dynamic' 'wasm-unsafe-eval'${process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : ""}`;
   return [
     "default-src 'self'",
     scriptSrc,
+    "worker-src 'self' blob:",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' blob: data:",
     "font-src 'self'",
