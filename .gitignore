@@ -16,6 +16,9 @@
 # next.js
 /.next/
 /out/
+/public/pdfjs/
+/public/tesseract/
+/eng.traineddata
 
 # production
 /build

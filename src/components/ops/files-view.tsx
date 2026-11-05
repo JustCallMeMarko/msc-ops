@@ -56,6 +56,7 @@ export function FilesView() {
   const [kind, setKind] = useState("all");
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
+  const [libraryDocuments, setLibraryDocuments] = useState<Record<string, { id: string; title: string }>>({});
   const selectedId = params.get("panel") === "file" ? params.get("id") : null;
   const selected = files.find((file) => file.id === selectedId) ?? null;
   const load = useCallback(async () => {
@@ -73,6 +74,13 @@ export function FilesView() {
   }, [kind, query]);
   // eslint-disable-next-line react-hooks/set-state-in-effect -- Fetch remote file metadata on filter changes.
   useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void fetch("/api/documents").then((response) => response.json()).then((payload) => {
+      const mapped: Record<string, { id: string; title: string }> = {};
+      for (const document of payload.documents ?? []) mapped[document.fileId] = { id: document.id, title: document.title };
+      setLibraryDocuments(mapped);
+    }).catch(() => setLibraryDocuments({}));
+  }, []);
   useEffect(() => {
     const onUploaded = () => { void load(); };
     window.addEventListener("msc-file-uploaded", onUploaded);
@@ -120,7 +128,7 @@ export function FilesView() {
           <span className="min-w-0 flex-1 truncate"><span className="font-medium">{file.originalName}</span><span className="ml-2 inline-flex rounded border border-border px-1.5 py-0.5 text-xs text-muted-foreground">{fileKindLabel(file.kind, file.source)}</span>{file.source && <span className="ml-1 text-xs text-muted-foreground">{FILE_SOURCE_LABELS[file.source] ?? enumLabel(file.source)}</span>}{file.tags.map((tag) => <span key={tag} className="ml-1 rounded bg-secondary px-1.5 py-0.5 text-xs text-muted-foreground">#{tag}</span>)}</span>
           <span className="shrink-0 text-right text-xs text-muted-foreground"><span className="block">v{file.version ?? 1} · {formatBytes(file.size)}</span><span className="block"><RelativeDate date={file.createdAt} /></span></span>
         </span>
-        {file.links?.length ? <div className="flex w-full flex-wrap items-center gap-1 pl-11 text-xs sm:w-auto sm:max-w-[45%] sm:pl-0"><span className="text-muted-foreground">Used by</span>{file.links.map((link) => link.href ? <a key={`${link.entityType}-${link.entityId}-${link.role}`} href={link.href} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} title={link.label} className="max-w-56 truncate rounded-full border border-border bg-background px-2 py-0.5 text-primary hover:bg-secondary">{link.entityType === "task" ? link.label.split(" ").slice(0, 1).join("") : link.label}</a> : <span key={`${link.entityType}-${link.entityId}-${link.role}`} className="rounded-full border border-border px-2 py-0.5">{link.label}</span>)}</div> : null}
+        {(file.links?.length || libraryDocuments[file.id]) ? <div className="flex w-full flex-wrap items-center gap-1 pl-11 text-xs sm:w-auto sm:max-w-[45%] sm:pl-0"><span className="text-muted-foreground">Used by</span>{file.links?.map((link) => link.href ? <a key={`${link.entityType}-${link.entityId}-${link.role}`} href={link.href} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} title={link.label} className="max-w-56 truncate rounded-full border border-border bg-background px-2 py-0.5 text-primary hover:bg-secondary">{link.entityType === "task" ? link.label.split(" ").slice(0, 1).join("") : link.label}</a> : <span key={`${link.entityType}-${link.entityId}-${link.role}`} className="rounded-full border border-border px-2 py-0.5">{link.label}</span>)}{libraryDocuments[file.id] && <a href={`/cbl/${libraryDocuments[file.id]!.id}`} onClick={(event) => event.stopPropagation()} onKeyDown={(event) => event.stopPropagation()} className="rounded-full border border-border bg-background px-2 py-0.5 text-primary hover:bg-secondary">CBL library</a>}</div> : null}
       </div>)}</div> : <EmptyState title="No files found" teachingText="Upload a PDF, document, or event photo." />}
     </section>
     <aside className="space-y-3 rounded border border-border bg-card p-4">
@@ -130,7 +138,9 @@ export function FilesView() {
         <label className="block space-y-1 text-xs text-muted-foreground">Name<Input defaultValue={selected.originalName} onBlur={(event) => { const value = event.currentTarget.value.trim(); if (value && value !== selected.originalName) void updateFile(selected, { originalName: value }); }} /></label>
         <label className="block space-y-1 text-xs text-muted-foreground">Tags<Input defaultValue={selected.tags.join(", ")} placeholder="policy, event" onBlur={(event) => { const tags = event.currentTarget.value.split(",").map((tag) => tag.trim()).filter(Boolean); if (JSON.stringify(tags) !== JSON.stringify(selected.tags)) void updateFile(selected, { tags }); }} /></label>
         {selected.mime.startsWith("image/") && <img src={`/api/files/${selected.id}/content`} alt={selected.originalName} className="max-h-64 w-full rounded object-contain" />}
-        {selected.mime === "application/pdf" && <iframe src={`/api/files/${selected.id}/content`} title={`Preview ${selected.originalName}`} className="h-64 w-full rounded border border-border bg-white" />}
+        {selected.mime === "application/pdf" && (libraryDocuments[selected.id]
+          ? <div className="rounded border border-border bg-secondary/40 p-4 text-sm"><p>Used by: CBL library</p><Button size="sm" className="mt-3" onClick={() => router.push(`/cbl/${libraryDocuments[selected.id]!.id}`)}>Open in document viewer</Button></div>
+          : <iframe src={`/api/files/${selected.id}/content`} title={`Preview ${selected.originalName}`} className="h-64 w-full rounded border border-border bg-white" />)}
         <div className="flex gap-2"><Button size="sm" variant="outline" onClick={() => window.open(`/api/files/${selected.id}/content`, "_blank", "noopener,noreferrer")}><DownloadIcon size={14} />Open</Button><Button size="sm" variant="ghost" onClick={() => void remove(selected)}><TrashIcon size={14} />Delete</Button></div>
         <div className="space-y-1 text-xs"><p className="text-muted-foreground">Used by</p>{selected.links?.length ? <div className="flex flex-wrap gap-1">{selected.links.map((link) => link.href ? <a key={`${link.entityType}-${link.entityId}-${link.role}`} href={link.href} className="rounded-full border border-border px-2 py-1 text-primary hover:bg-secondary">{link.label}</a> : <span key={`${link.entityType}-${link.entityId}-${link.role}`} className="rounded-full border border-border px-2 py-1">{link.label}</span>)}</div> : <p className="text-muted-foreground">—</p>}</div>
       </div>}

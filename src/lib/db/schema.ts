@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { bigserial, bigint, boolean, check, date, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from "drizzle-orm/pg-core";
+import { bigserial, bigint, boolean, check, date, index, integer, jsonb, pgTable, serial, text, timestamp, uniqueIndex, uuid, customType, type AnyPgColumn } from "drizzle-orm/pg-core";
 import { uuidv7 } from "uuidv7";
 import type { FinanceCategory, FinanceKind } from "@/lib/finance/constants";
 import { commonColumns } from "./columns";
@@ -420,9 +420,111 @@ export const guideProgress = pgTable("guide_progress", {
   uniqueIndex("guide_progress_guide_step_unique").on(table.guideKey, table.stepKey),
 ]);
 
+const vectorValue = customType<{ data: string; driverData: string }>({ dataType: () => "vector" });
+const tsvectorValue = customType<{ data: string; driverData: string }>({ dataType: () => "tsvector" });
+
+export const documents = pgTable("documents", {
+  ...commonColumns,
+  fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "restrict" }),
+  lineageId: uuid("lineage_id").notNull(),
+  title: text("title").notNull(),
+  kind: text("kind").notNull(),
+  version: integer("version").notNull().default(1),
+  previousDocumentId: uuid("previous_document_id").references((): AnyPgColumn => documents.id, { onDelete: "restrict" }),
+  pageCount: integer("page_count").notNull().default(0),
+  status: text("status").notNull().default("queued"),
+  progress: integer("progress").notNull().default(0),
+  error: text("error"),
+  ocr: boolean("ocr").notNull().default(false),
+  active: boolean("active").notNull().default(true),
+}, (table) => [
+  index("documents_file_idx").on(table.fileId),
+  uniqueIndex("documents_lineage_active_unique").on(table.lineageId).where(sql`${table.active}`),
+  index("documents_lineage_version_idx").on(table.previousDocumentId, table.version),
+  check("documents_kind_check", sql`${table.kind} in ('cbl', 'rso_manual', 'reference')`),
+  check("documents_status_check", sql`${table.status} in ('queued', 'extracting', 'needs_ocr', 'chunking', 'embedding', 'ready', 'error', 'cancelled')`),
+  check("documents_progress_check", sql`${table.progress} between 0 and 100`),
+]);
+
+export const docPages = pgTable("doc_pages", {
+  documentId: uuid("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  page: integer("page").notNull(),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  items: jsonb("items").notNull().default([]),
+  charCount: integer("char_count").notNull().default(0),
+  ocr: boolean("ocr").notNull().default(false),
+}, (table) => [
+  uniqueIndex("doc_pages_document_page_unique").on(table.documentId, table.page),
+  check("doc_pages_page_check", sql`${table.page} > 0`),
+]);
+
+export const docChunks = pgTable("doc_chunks", {
+  ...commonColumns,
+  documentId: uuid("document_id").notNull().references(() => documents.id, { onDelete: "cascade" }),
+  ord: integer("ord").notNull(),
+  headingPath: text("heading_path").notNull().default(""),
+  text: text("text").notNull(),
+  segments: jsonb("segments").notNull(),
+  tsv: tsvectorValue("tsv").generatedAlwaysAs(sql`to_tsvector('english', coalesce("heading_path", '') || ' ' || "text")`),
+}, (table) => [
+  uniqueIndex("doc_chunks_document_ord_unique").on(table.documentId, table.ord),
+  index("doc_chunks_document_idx").on(table.documentId),
+]);
+
+export const chunkEmbeddings = pgTable("chunk_embeddings", {
+  ...commonColumns,
+  chunkId: uuid("chunk_id").notNull().references(() => docChunks.id, { onDelete: "cascade" }),
+  modelKey: text("model_key").notNull(),
+  dims: integer("dims").notNull(),
+  embedding: vectorValue("embedding").notNull(),
+}, (table) => [
+  uniqueIndex("chunk_embeddings_chunk_model_unique").on(table.chunkId, table.modelKey),
+]);
+
+export const jobs = pgTable("jobs", {
+  ...commonColumns,
+  kind: text("kind").notNull(),
+  refId: uuid("ref_id").notNull(),
+  status: text("status").notNull().default("queued"),
+  progress: integer("progress").notNull().default(0),
+  error: text("error"),
+  cancelRequested: boolean("cancel_requested").notNull().default(false),
+  startedAt: timestamp("started_at", { withTimezone: true }),
+  finishedAt: timestamp("finished_at", { withTimezone: true }),
+}, (table) => [
+  index("jobs_status_created_idx").on(table.status, table.createdAt),
+  check("jobs_status_check", sql`${table.status} in ('queued', 'running', 'ready', 'error', 'cancelled')`),
+]);
+
+export const chatThreads = pgTable("chat_threads", {
+  ...commonColumns,
+  scope: text("scope").notNull(),
+  scopeRef: text("scope_ref"),
+  title: text("title").notNull().default("New conversation"),
+}, (table) => [
+  index("chat_threads_scope_updated_idx").on(table.scope, table.updatedAt),
+  check("chat_threads_scope_check", sql`${table.scope} in ('cbl', 'finance', 'general')`),
+]);
+
+export const chatMessages = pgTable("chat_messages", {
+  ...commonColumns,
+  threadId: uuid("thread_id").notNull().references(() => chatThreads.id, { onDelete: "cascade" }),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  citations: jsonb("citations").notNull().default([]),
+  docIds: uuid("doc_ids").array().notNull().default(sql`'{}'::uuid[]`),
+  modelKey: text("model_key"),
+  partial: boolean("partial").notNull().default(false),
+}, (table) => [
+  index("chat_messages_thread_created_idx").on(table.threadId, table.createdAt),
+  check("chat_messages_role_check", sql`${table.role} in ('system', 'user', 'assistant')`),
+]);
+
 export const schema = {
   appMeta, settings, providers, networkLog, committees, members, events, deadlineRules, holidays,
   tasks, taskActivity, checklistItems, attendees, announcementTemplates, files, fileLinks,
   posts, postingRules, postAssets, captions, captionTemplates, hashtagSets, mentionLists, postActivity,
   accounts, ledgerEntries, ledgerReceipts, budgetLines, liquidations, liquidationItems, reconciliations, guideProgress,
+  documents, docPages, docChunks, chunkEmbeddings, jobs, chatThreads, chatMessages,
 };

@@ -24,6 +24,7 @@ import { now } from "@/lib/clock";
 import { MANILA_TIME_ZONE } from "@/lib/tasks/logic";
 import { APPROVAL_STATUS_LABELS, ATTENDEE_SOURCE_LABELS, EVENT_TYPE_LABELS, FILE_SOURCE_LABELS, POST_STATUS_LABELS, POST_TYPE_LABELS, enumLabel, fileKindLabel } from "@/lib/ui-labels";
 import { EventFinancePanel } from "@/components/ops/event-finance-panel";
+import { ManualCitation } from "@/components/docs/manual-citation";
 
 type EventRow = { id: string; name: string; slug: string; type: string; startsAt: string; endsAt: string; venue: string; description: string; approvalStatus: string; lumaUrl: string | null; participantTarget: number; participantActual: number; hasFees: boolean; hasExternalGuests: boolean; isMajor: boolean; updatedAt: string; checklistProgress?: { done: number; total: number } };
 type Item = { id: string; phase: string; title: string; detail: string; source: string; ruleKey: string | null; dueAt: string; dueOverridden: boolean; late: boolean; status: string; taskId: string | null; taskNumber: number | null };
@@ -83,7 +84,7 @@ function ChecklistItemRow({
       <Checkbox checked={item.status === "done"} onCheckedChange={(checked) => onStatusChange(checked === true)} />
       <div className="flex min-w-[220px] flex-1 flex-wrap items-center gap-2">
         <span className={`font-medium ${item.status === "done" ? "text-muted-foreground line-through" : ""}`}>{item.title}</span>
-        {rule && <span title={rule.source} className="max-w-full truncate rounded border border-border bg-secondary/60 px-1.5 py-0.5 text-[11px] text-muted-foreground">{ruleOffsetLabel(rule)} · {rule.source}</span>}
+        {rule && <span className="inline-flex items-center gap-1 rounded border border-border bg-secondary/60 px-1.5 py-0.5 text-[11px] text-muted-foreground"><span>{ruleOffsetLabel(rule)} ·</span>{/rso manual/i.test(rule.source) ? <ManualCitation query={rule.source} label={rule.source} /> : <span title={rule.source}>{rule.source}</span>}</span>}
       </div>
       <div className="flex max-w-full flex-wrap items-center justify-end gap-1">
         <DatePicker

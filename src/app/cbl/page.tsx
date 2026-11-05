@@ -1,2 +1,6 @@
-import { PlaceholderPage } from "@/components/shell/placeholder-page";
-export default function CblPage() { return <PlaceholderPage title="CBL" />; }
+import { DocumentsLibrary } from "@/components/docs/library";
+import { WorkspaceShell } from "@/components/shell/workspace-shell";
+
+export default function CblPage() {
+  return <WorkspaceShell><DocumentsLibrary /></WorkspaceShell>;
+}
