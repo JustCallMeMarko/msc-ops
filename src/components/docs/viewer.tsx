@@ -4,10 +4,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import ReactMarkdown from "react-markdown";
+import "react-pdf/dist/Page/TextLayer.css";
 import { ArrowLeftIcon, ArrowRightIcon, ArrowUpIcon, SearchIcon, ZoomInIcon, ZoomOutIcon } from "@primer/octicons-react";
 import { Button } from "@/components/ui/button";
 import { apiFetch } from "@/lib/api-client";
 import { escapeDocumentText, renderDocumentHighlight } from "@/lib/docs/highlight";
+import { isReadableHeading, sectionSuggestionLabel, suggestionHeading } from "@/lib/docs/headings";
 
 type Segment = { page: number; startItem: number; startOffset: number; endItem: number; endOffset: number };
 type PdfModule = typeof import("react-pdf");
@@ -18,8 +20,9 @@ export type DocData = {
   pages: PageRow[];
   chunks: Chunk[];
 };
-type Source = { n: number; chunkId: string; documentId: string; page: number; title?: string; version?: number; headingPath?: string };
-type Message = { role: "user" | "assistant"; content: string; sources?: Source[]; partial?: boolean };
+type Source = { n: number; chunkId: string; documentId: string; page: number; title?: string; version?: number; headingPath?: string; text?: string; auto?: boolean };
+type BestMatch = Omit<Source, "n">;
+type Message = { role: "user" | "assistant"; content: string; sources?: Source[]; bestMatch?: BestMatch | null; partial?: boolean };
 
 export function DocumentViewer({ initialData }: { initialData: DocData }) {
   const params = useParams<{ docId: string }>();
@@ -35,12 +38,14 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<Array<{ documentId: string; title: string; page: number; headingPath: string; chunkId: string; text: string }>>([]);
   const [zoom, setZoom] = useState(1);
+  const [pageWidth, setPageWidth] = useState(0);
   const [chatWidth, setChatWidth] = useState(420);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [ocrBusy, setOcrBusy] = useState(false);
   const [pdfComponents, setPdfComponents] = useState<Pick<PdfModule, "Document" | "Page"> | null>(null);
   const pdfContainer = useRef<HTMLDivElement>(null);
+  const newlyCreatedThreads = useRef(new Set<string>());
 
   useEffect(() => {
     let mounted = true;
@@ -71,13 +76,15 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
 
   useEffect(() => {
     if (!threadId) return;
+    if (newlyCreatedThreads.current.delete(threadId)) return;
     void fetch(`/api/documents/chat?threadId=${encodeURIComponent(threadId)}`).then(async (response) => {
       if (!response.ok) return;
       const payload = await response.json();
-      setMessages(payload.messages.map((message: { role: string; content: string; citations?: Source[]; partial?: boolean }) => ({
+      setMessages(payload.messages.map((message: { role: string; content: string; citations?: Source[]; bestMatch?: BestMatch | null; partial?: boolean }) => ({
         role: message.role === "user" ? "user" : "assistant",
         content: message.content,
         sources: message.citations?.map((citation) => ({ ...citation })),
+        bestMatch: message.bestMatch,
         partial: message.partial,
       })));
     });
@@ -100,6 +107,16 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
   }, [page, highlightId, threadId]);
 
   useEffect(() => {
+    const container = pdfContainer.current;
+    if (!container) return;
+    const observer = new ResizeObserver(([entry]) => {
+      if (entry) setPageWidth(Math.max(1, Math.floor(entry.contentRect.width)));
+    });
+    observer.observe(container);
+    return () => observer.disconnect();
+  }, []);
+
+  useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (event.target instanceof HTMLElement && ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName)) return;
       if (event.key === "j") setPage((current) => Math.min(data?.document.pageCount ?? current, current + 1));
@@ -116,15 +133,22 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
     return [...new Set([page, ...(pageNumbers ?? [])])].sort((a, b) => a - b);
   }, [highlighted, page]);
   useEffect(() => {
-    window.document.getElementById(`pdf-page-${page}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
-  }, [page, highlightId]);
-  const headings = useMemo(() => {
+    if (!highlighted) window.document.getElementById(`pdf-page-${page}`)?.scrollIntoView({ block: "start", behavior: "smooth" });
+  }, [page, highlightId, highlighted]);
+  const { headings, suggestions } = useMemo(() => {
     const unique = new Map<string, Chunk>();
     for (const chunk of data?.chunks ?? []) {
       const label = chunk.headingPath.trim();
-      if (label && !unique.has(label)) unique.set(label, chunk);
+      const firstPage = chunk.segments[0]?.page;
+      if (!label || !firstPage || data?.pages.find((item) => item.page === firstPage)?.ocr || unique.has(label)) continue;
+      const leaf = sectionSuggestionLabel(label);
+      if (isReadableHeading(leaf) || suggestionHeading(label)) unique.set(label, chunk);
     }
-    return [...unique.values()];
+    const candidates = [...unique.values()];
+    return {
+      headings: candidates.filter((chunk) => isReadableHeading(sectionSuggestionLabel(chunk.headingPath))),
+      suggestions: candidates.filter((chunk) => suggestionHeading(chunk.headingPath)).slice(0, 4),
+    };
   }, [data]);
 
   const updateLocation = (documentId: string, targetPage: number, chunkId: string, sourceThread = threadId) => {
@@ -146,6 +170,13 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
     const start = itemIndex === segment.startItem ? Math.min(str.length, segment.startOffset) : 0;
     const end = itemIndex === segment.endItem ? Math.min(str.length, segment.endOffset) : str.length;
     return renderDocumentHighlight(str, start, end);
+  };
+
+  const scrollToHighlight = (pageNumber: number) => {
+    if (!highlighted?.segments.some((segment) => segment.page === pageNumber)) return;
+    window.requestAnimationFrame(() => {
+      window.document.querySelector(`#pdf-page-${pageNumber} mark.cite-hl`)?.scrollIntoView({ block: "center", inline: "nearest", behavior: "smooth" });
+    });
   };
 
   const chooseCitation = (source?: Source) => {
@@ -173,6 +204,13 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
     setInput("");
     setMessages((previous) => [...previous, { role: "user", content: message }, { role: "assistant", content: "", sources: [] }]);
     try {
+      const searchParams = new URLSearchParams({ q: message });
+      if (!scopeAll) searchParams.set("docId", docId);
+      const bestResponse = await fetch(`/api/documents/search?${searchParams.toString()}`);
+      if (bestResponse.ok) {
+        const best = (await bestResponse.json()).results?.[0] as BestMatch | undefined;
+        if (best) setMessages((previous) => previous.map((item, index) => index === previous.length - 1 ? { ...item, bestMatch: best } : item));
+      }
       const response = await apiFetch("/api/documents/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -181,7 +219,6 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
       if (!response.ok || !response.body) {
         const payload = await response.json().catch(() => ({}));
         setError(payload.error ?? "Could not start cited chat.");
-        setMessages((previous) => previous.slice(0, -2));
         return;
       }
       const reader = response.body.getReader();
@@ -197,9 +234,13 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
           if (!line) continue;
           const event = JSON.parse(line);
           if (event.type === "thread") {
+            if (event.threadId !== threadId) newlyCreatedThreads.current.add(event.threadId);
             setThreadId(event.threadId);
+            if (event.bestMatch) setMessages((previous) => previous.map((item, index) => index === previous.length - 1 ? { ...item, bestMatch: event.bestMatch } : item));
           } else if (event.type === "text") {
             setMessages((previous) => previous.map((item, index) => index === previous.length - 1 ? { ...item, content: item.content + event.text } : item));
+          } else if (event.type === "replace") {
+            setMessages((previous) => previous.map((item, index) => index === previous.length - 1 ? { ...item, content: event.text } : item));
           } else if (event.type === "sources") {
             setMessages((previous) => previous.map((item, index) => index === previous.length - 1 ? { ...item, sources: event.sources, partial: event.partial } : item));
           } else if (event.type === "error") {
@@ -287,7 +328,7 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
   const PdfPage = pdfComponents?.Page;
   const pagesToRead = Math.max(1, docInfo.pageCount);
 
-  return <div className="flex h-[calc(100vh-3.5rem)] min-h-[620px] flex-col overflow-hidden">
+  return <div className="flex h-[calc(100vh-6.5rem)] min-h-[620px] flex-col overflow-hidden">
     <header className="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
       <Link href="/cbl" className="text-sm text-muted-foreground hover:text-foreground">CBL library</Link><span className="text-muted-foreground">/</span>
       <h1 className="min-w-0 flex-1 truncate font-semibold">{docInfo.title} <span className="text-sm font-normal text-muted-foreground">v{docInfo.version}</span></h1>
@@ -301,6 +342,7 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
         <Button aria-label="Zoom out" size="sm" variant="ghost" onClick={() => setZoom((value) => Math.max(0.65, value - 0.1))}><ZoomOutIcon size={15} /></Button>
         <span className="w-12 text-center text-xs text-muted-foreground">{Math.round(zoom * 100)}%</span>
         <Button aria-label="Zoom in" size="sm" variant="ghost" onClick={() => setZoom((value) => Math.min(1.6, value + 0.1))}><ZoomInIcon size={15} /></Button>
+        <Button size="sm" variant="outline" onClick={() => setZoom(1)}>Fit width</Button>
       </div>
     </header>
 
@@ -325,7 +367,7 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
           </div>
           <span className="text-xs text-muted-foreground">Keyboard: j / k · / to search</span>
         </div>
-        <div className="mx-auto flex w-fit max-w-full flex-col gap-4">
+        <div className="mx-auto flex w-max min-w-full max-w-none flex-col gap-4">
           {canRead && PdfDocument && PdfPage ? <PdfDocument file={`/api/files/${docInfo.fileId}/content`} options={Object.assign({
             isEvalSupported: false,
             cMapUrl: "/pdfjs/react-pdf/cmaps/",
@@ -334,8 +376,8 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
             enableXfa: false,
             enableScripting: false,
           })} loading={<div className="grid h-[700px] w-[550px] place-items-center text-sm text-muted-foreground">Rendering PDF page…</div>} onLoadError={() => setError("The PDF could not be rendered.")}>
-            {pagesToRender.map((pageNumber) => <div id={`pdf-page-${pageNumber}`} key={pageNumber} className="flex w-fit max-w-full justify-center rounded bg-white shadow">
-              <PdfPage pageNumber={pageNumber} scale={zoom} customTextRenderer={textRenderer} renderAnnotationLayer={false} renderForms={false} />
+            {pageWidth > 0 && pagesToRender.map((pageNumber) => <div id={`pdf-page-${pageNumber}`} key={pageNumber} className="flex w-max min-w-full justify-center rounded bg-white shadow">
+              <PdfPage pageNumber={pageNumber} width={pageWidth} scale={zoom} customTextRenderer={textRenderer} onRenderTextLayerSuccess={() => scrollToHighlight(pageNumber)} renderAnnotationLayer={false} renderForms={false} />
             </div>)}
           </PdfDocument> : <div className="grid h-[700px] w-[550px] place-items-center text-sm text-muted-foreground">{canRead ? "Loading local PDF renderer…" : "PDF extraction is in progress."}</div>}
         </div>
@@ -352,9 +394,15 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
       }} aria-label="Resize chat panel" />
 
       <aside className="flex min-h-0 flex-col border-l border-border bg-background">
-        <div className="flex items-center justify-between border-b border-border px-4 py-3">
+        <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border px-4 py-3">
           <h2 className="font-semibold">Ask the document</h2>
-          <label className="flex items-center gap-2 text-xs text-muted-foreground"><input type="checkbox" checked={scopeAll} onChange={(event) => setScopeAll(event.target.checked)} />All library docs</label>
+          <div role="group" aria-label="Chat scope" className="flex rounded-md border border-border bg-background p-0.5">
+            {([
+              [false, "This document"],
+              [true, "All documents"],
+            ] as const).map(([all, label]) => <button key={label} type="button" aria-pressed={scopeAll === all} onClick={() => setScopeAll(all)}
+              className={`rounded px-2 py-1.5 text-[11px] font-medium transition-colors ${scopeAll === all ? "bg-primary text-white" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>{label}</button>)}
+          </div>
         </div>
         <div className="flex min-h-0 flex-1">
           <nav className="hidden w-36 shrink-0 overflow-y-auto border-r border-border p-2 xl:block">
@@ -368,14 +416,16 @@ export function DocumentViewer({ initialData }: { initialData: DocData }) {
                 {highlighted && <Button size="sm" variant="outline" className="mt-3" onClick={() => setInput(`Explain this section: ${highlighted.headingPath}`)}>Ask about this section</Button>}
               </div>}
               {messages.map((message, index) => <div key={`${index}-${message.role}`} className={`max-w-full rounded-lg p-3 text-sm ${message.role === "user" ? "ml-6 bg-secondary" : "mr-2 border border-border bg-card"}`}>
-                {message.role === "assistant" ? renderCitedMarkdown(message.content, message.sources ?? [], chooseCitation) : <p className="whitespace-pre-wrap">{message.content}</p>}
+                {message.role === "assistant" && message.bestMatch && <BestMatchCard match={message.bestMatch} onShow={() => chooseCitation({ ...message.bestMatch!, n: 1 })} />}
+                {message.role === "assistant" && message.content ? renderCitedMarkdown(message.content, message.sources ?? [], chooseCitation) : message.role === "user" ? <p className="whitespace-pre-wrap">{message.content}</p> : null}
                 {message.role === "assistant" && message.sources?.length ? <div className="mt-3 border-t border-border pt-2"><p className="mb-1 text-xs font-semibold text-muted-foreground">Sources</p>{message.sources.map((source) => <button key={`${source.n}-${source.chunkId}`} type="button" className="mr-2 text-xs text-primary underline" onClick={() => chooseCitation(source)}>[{source.n}] {source.title ?? "Document"} · p.{source.page}</button>)}</div> : null}
                 {message.partial && <Button size="sm" variant="outline" className="mt-2" onClick={() => void submit(messages[index - 1]?.content)}>Retry</Button>}
               </div>)}
               {error && <p role="alert" className="rounded bg-destructive/10 p-2 text-sm text-destructive">{error}</p>}
             </div>
             <div className="border-t border-border p-3">
-              {headings.length > 0 && <div className="mb-2 flex gap-2 overflow-x-auto">{headings.slice(0, 3).map((chunk) => <Button key={chunk.id} size="sm" variant="ghost" className="shrink-0" onClick={() => setInput(`Explain ${chunk.headingPath}`)}>Ask: {chunk.headingPath}</Button>)}</div>}
+              {suggestions.length > 0 && <div className="mb-2 flex flex-wrap gap-1.5">{suggestions.map((chunk) => <button key={chunk.id} type="button" title={chunk.headingPath} onClick={() => setInput(`Explain ${sectionSuggestionLabel(chunk.headingPath)}`)}
+                className="rounded-full border border-border bg-background px-2 py-1 text-[11px] leading-4 text-muted-foreground hover:bg-secondary hover:text-foreground">Ask: {sectionSuggestionLabel(chunk.headingPath)}</button>)}</div>}
               <form onSubmit={(event) => { event.preventDefault(); void submit(); }} className="flex items-end gap-2">
                 <textarea value={input} onChange={(event) => setInput(event.target.value)} rows={3} placeholder="Ask a question…" className="min-h-20 min-w-0 flex-1 resize-y rounded-md border border-border bg-background p-2 text-sm" />
                 <Button type="submit" disabled={busy || !input.trim()} aria-label="Send question"><ArrowUpIcon size={15} /></Button>
@@ -396,7 +446,7 @@ function renderCitedMarkdown(content: string, sources: Source[], onCitation: (so
       if (match) {
         const number = Number(match[1]);
         const source = sources.find((item) => item.n === number);
-        return <button key={index} type="button" onClick={() => onCitation(source)} disabled={!source} className="mx-0.5 inline-flex rounded bg-primary/10 px-1.5 py-0.5 text-xs font-semibold text-primary align-baseline">[{number}]</button>;
+        return <button key={index} type="button" title={source?.auto ? "Matched automatically" : undefined} onClick={() => onCitation(source)} disabled={!source} className={`mx-0.5 inline-flex rounded px-1.5 py-0.5 text-xs font-semibold align-baseline ${source?.auto ? "bg-secondary text-muted-foreground" : "bg-primary/10 text-primary"}`}>[{number}]</button>;
       }
       return <ReactMarkdown key={index} components={{
         a: ({ href, children }) => href && /^https?:\/\//i.test(href)
@@ -405,4 +455,18 @@ function renderCitedMarkdown(content: string, sources: Source[], onCitation: (so
       }}>{piece}</ReactMarkdown>;
     })}
   </div>;
+}
+
+function BestMatchCard({ match, onShow }: { match: BestMatch; onShow: () => void }) {
+  return <section className="mb-3 rounded-md border border-attention/40 bg-attention/5 p-3">
+    <div className="flex flex-wrap items-start justify-between gap-2">
+      <div className="min-w-0">
+        <p className="text-xs font-semibold uppercase tracking-wide text-attention">Best match</p>
+        <p className="mt-1 truncate font-medium" title={match.headingPath}>{match.headingPath || match.title}</p>
+        <p className="text-xs text-muted-foreground">{match.title} · p.{match.page}</p>
+      </div>
+      <Button type="button" size="sm" variant="outline" onClick={onShow}>Show in PDF</Button>
+    </div>
+    <p className="mt-2 line-clamp-2 whitespace-pre-wrap text-xs text-muted-foreground">{match.text}</p>
+  </section>;
 }

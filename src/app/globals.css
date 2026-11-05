@@ -91,7 +91,7 @@
 
 .cite-hl {
   border-radius: 2px;
-  background: #ffdf5d99;
+  background: #ffdf5d66 !important;
   color: inherit;
   animation: cite-highlight-pulse 1.8s ease-out;
 }

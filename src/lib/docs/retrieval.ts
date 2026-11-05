@@ -18,6 +18,12 @@ export type SearchResult = {
   score: number;
 };
 
+export function vectorDocumentFilter(docIds?: string[]) {
+  return docIds?.length
+    ? sql`and d.id in (${sql.join(docIds.map((id) => sql`${id}::uuid`), sql`, `)})`
+    : sql`and d.kind in ('cbl', 'rso_manual') and d.active`;
+}
+
 export function reciprocalRankFusion<T extends { chunkId: string; score: number }>(
   lists: T[][],
   limit: number,
@@ -86,7 +92,7 @@ export async function searchDocuments(
     const embeddingModel = await getEmbeddingModel(provider.id, defaults.embedding.model);
     const vector = (await embed({ model: embeddingModel, value: query })).embedding;
     const vectorText = `[${vector.join(",")}]`;
-    const idCondition = options.docIds?.length ? sql`and d.id = any(${options.docIds}::uuid[])` : sql`and d.kind in ('cbl', 'rso_manual') and d.active`;
+    const idCondition = vectorDocumentFilter(options.docIds);
     const vectorRows = await db.execute(sql`
       select c.id as "chunkId", d.id as "documentId", d.title, d.kind, d.version,
         c.heading_path as "headingPath", c.text, c.segments,

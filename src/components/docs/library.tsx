@@ -18,6 +18,7 @@ type DocumentRow = {
   progress: number;
   error: string | null;
   ocr: boolean;
+  ocrPageCount?: number;
   active: boolean;
   indexedModel?: string | null;
   keywordOnly?: boolean;
@@ -25,6 +26,10 @@ type DocumentRow = {
 };
 
 const kindNames = { cbl: "Constitution & By-Laws", rso_manual: "RSO Manual", reference: "References" };
+
+function modelBadgeLabel(modelKey: string): string {
+  return modelKey.replace(/^[^:]+:/, "").replace(/:latest$/, "");
+}
 
 export function DocumentsLibrary() {
   const router = useRouter();
@@ -100,6 +105,7 @@ export function DocumentsLibrary() {
     if (dropped) {
       setFile(dropped);
       setTitle(dropped.name.replace(/\.pdf$/i, ""));
+      setError("");
     }
   };
 
@@ -121,45 +127,13 @@ export function DocumentsLibrary() {
     <header className="flex flex-wrap items-end justify-between gap-4">
       <div><p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Document library</p><h1 className="mt-1 text-2xl font-semibold">CBL &amp; RSO Manual</h1>
         <p className="mt-1 text-sm text-muted-foreground">Search the organization’s governing documents offline and ask questions with page citations.</p></div>
-      <span className="rounded-full border border-border bg-secondary px-3 py-1 text-xs text-muted-foreground">Search works offline · no model required</span>
+      <div className="flex items-center gap-3">
+        <span className="rounded-full border border-border bg-secondary px-3 py-1 text-xs text-muted-foreground">Search works offline · no model required</span>
+        <Button type="button" size="sm" onClick={() => inputRef.current?.click()}><PlusIcon size={14} />Add document</Button>
+      </div>
     </header>
 
-    <section className="rounded-lg border border-border bg-card p-5">
-      <h2 className="text-base font-semibold">Add a document</h2>
-      <div className="mt-4 grid gap-3 md:grid-cols-[180px_1fr_1.2fr]">
-        <select value={kind} onChange={(event) => setKind(event.target.value as DocumentRow["kind"])} className="h-10 rounded-md border border-border bg-background px-3 text-sm">
-          <option value="cbl">CBL</option><option value="rso_manual">RSO Manual</option><option value="reference">Reference</option>
-        </select>
-        <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Document title" className="h-10 rounded-md border border-border bg-background px-3 text-sm" />
-        <div onDragOver={(event) => event.preventDefault()} onDrop={drop} className="flex min-h-10 items-center gap-3 rounded-md border border-dashed border-border bg-background px-3 py-2">
-          <FileIcon size={16} className="shrink-0 text-muted-foreground" />
-          <span className="min-w-0 flex-1 truncate text-sm text-muted-foreground">{file?.name ?? "Drop a PDF here or choose a file (50 MB max)"}</span>
-          <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => {
-            const selected = event.target.files?.[0] ?? null;
-            setFile(selected);
-            if (selected) setTitle(selected.name.replace(/\.pdf$/i, ""));
-          }} />
-          <Button type="button" size="sm" variant="outline" onClick={() => inputRef.current?.click()}>Choose PDF</Button>
-        </div>
-      </div>
-      {kind === "cbl" && activeCbl && <label className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
-        <input type="checkbox" checked={newVersion} onChange={(event) => setNewVersion(event.target.checked)} />
-        Upload as a new version of {documents.find((document) => document.kind === "cbl" && document.active)?.title}
-      </label>}
-      <div className="mt-3 flex flex-wrap items-center gap-3">
-        <Button type="button" disabled={!file || pending} onClick={() => void upload()}><PlusIcon size={14} />{pending ? "Uploading…" : "Add to library"}</Button>
-        {error && <span role="alert" className="text-sm text-destructive">{error}</span>}
-        {missingAskDocument && <span role="status" className="text-sm text-attention">Add the CBL or RSO Manual to start cited chat.</span>}
-        {already && <span className="text-sm">Already in library: <Link className="text-primary underline" href={already.href}>Open {already.title}</Link></span>}
-      </div>
-    </section>
-
-    {!documents.length ? <section className="grid gap-3 md:grid-cols-2">
-      {(["cbl", "rso_manual"] as const).map((type) => <button key={type} type="button" onClick={() => setKind(type)} className="rounded-lg border border-dashed border-border bg-card p-6 text-left hover:bg-secondary/50">
-        <FileIcon size={18} className="text-primary" /><h2 className="mt-3 font-semibold">{type === "cbl" ? "Add your CBL" : "Add the RSO Manual"}</h2>
-        <p className="mt-1 text-sm text-muted-foreground">Upload a PDF to make it searchable and available to cited chat.</p>
-      </button>)}
-    </section> : <div className="space-y-5">
+    {documents.length ? <div className="space-y-5">
       {(["cbl", "rso_manual", "reference"] as const).map((group) => {
         const rows = documents.filter((document) => document.kind === group);
         if (!rows.length) return null;
@@ -173,8 +147,10 @@ export function DocumentsLibrary() {
               <div className="min-w-48 flex-1">
                 <div className="flex flex-wrap items-center gap-2"><Link href={`/cbl/${document.id}`} className="font-medium text-primary underline-offset-2 hover:underline">{document.title}</Link>
                   <span className="rounded-full border border-border px-2 py-0.5 text-xs text-muted-foreground">v{document.version}{document.active ? " · Active" : " · Older version"}</span>
-                  {document.ocr && <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">OCR’d</span>}
-                  {document.status === "ready" && document.indexedModel && <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">Indexed with {document.indexedModel}</span>}
+                  {(document.ocrPageCount ?? 0) > 0 && <span className="rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">
+                    {document.ocrPageCount} {document.ocrPageCount === 1 ? "page" : "pages"} OCR’d
+                  </span>}
+                  {document.status === "ready" && document.indexedModel && <span title={document.indexedModel} className="rounded-full bg-success/10 px-2 py-0.5 text-xs text-success">Indexed with {modelBadgeLabel(document.indexedModel)}</span>}
                   {document.status === "ready" && document.keywordOnly && <span className="rounded-full bg-secondary px-2 py-0.5 text-xs text-muted-foreground">Keyword search only</span>}
                 </div>
                 <p className="mt-1 text-xs text-muted-foreground">{document.pageCount} pages · {document.status.replaceAll("_", " ")}</p>
@@ -189,6 +165,53 @@ export function DocumentsLibrary() {
           </div>)}
         </section>;
       })}
-    </div>}
+    </div> : <section className="grid gap-3 md:grid-cols-2">
+      {(["cbl", "rso_manual"] as const).map((type) => <button key={type} type="button" onClick={() => setKind(type)} className="rounded-lg border border-dashed border-border bg-card p-6 text-left hover:bg-secondary/50">
+        <FileIcon size={18} className="text-primary" /><h2 className="mt-3 font-semibold">{type === "cbl" ? "Add your CBL" : "Add the RSO Manual"}</h2>
+        <p className="mt-1 text-sm text-muted-foreground">Upload a PDF to make it searchable and available to cited chat.</p>
+      </button>)}
+    </section>}
+
+    <section onDragOver={(event) => event.preventDefault()} onDrop={drop} className="rounded-lg border border-dashed border-border bg-card p-5">
+      <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="sr-only" onChange={(event) => {
+        const selected = event.target.files?.[0] ?? null;
+        setFile(selected);
+        if (selected) {
+          setTitle(selected.name.replace(/\.pdf$/i, ""));
+          setError("");
+        }
+      }} />
+      {!file ? <div className="flex min-h-20 items-center justify-center gap-3 text-sm text-muted-foreground">
+        <FileIcon size={18} />
+        <p>Drop a PDF here · use <span className="font-medium text-foreground">Add document</span> to choose a file · 50 MB max</p>
+      </div> : <div className="space-y-4">
+        <div className="flex flex-wrap items-center gap-3">
+          <FileIcon size={17} className="shrink-0 text-primary" />
+          <span className="min-w-0 flex-1 truncate text-sm font-medium" title={file.name}>{file.name}</span>
+          <Button type="button" size="sm" variant="outline" onClick={() => inputRef.current?.click()}>Choose another PDF</Button>
+        </div>
+        <div className="flex flex-wrap items-center gap-3">
+          <input value={title} onChange={(event) => setTitle(event.target.value)} placeholder="Document title" aria-label="Document title" className="h-9 min-w-48 flex-1 rounded-md border border-border bg-background px-3 text-sm" />
+          <div role="group" aria-label="Document kind" className="flex rounded-md border border-border bg-background p-0.5">
+            {([
+              ["cbl", "CBL"],
+              ["rso_manual", "RSO Manual"],
+              ["reference", "Reference"],
+            ] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={kind === value} onClick={() => setKind(value)}
+              className={`rounded px-2.5 py-1.5 text-xs font-medium transition-colors ${kind === value ? "bg-primary text-white" : "text-muted-foreground hover:bg-secondary hover:text-foreground"}`}>{label}</button>)}
+          </div>
+        </div>
+        {kind === "cbl" && activeCbl && <label className="flex items-center gap-2 text-sm text-muted-foreground">
+          <input type="checkbox" checked={newVersion} onChange={(event) => setNewVersion(event.target.checked)} />
+          Upload as a new version of {documents.find((document) => document.kind === "cbl" && document.active)?.title}
+        </label>}
+        <div className="flex flex-wrap items-center gap-3">
+          <Button type="button" disabled={!file || pending} onClick={() => void upload()}><PlusIcon size={14} />{pending ? "Uploading…" : "Add to library"}</Button>
+          {error && <span role="alert" className="text-sm text-destructive">{error}</span>}
+          {missingAskDocument && <span role="status" className="text-sm text-attention">Add the CBL or RSO Manual to start cited chat.</span>}
+          {already && <span className="text-sm">Already in library: <Link className="text-primary underline" href={already.href}>Open {already.title}</Link></span>}
+        </div>
+      </div>}
+    </section>
   </div>;
 }

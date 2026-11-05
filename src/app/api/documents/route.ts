@@ -3,7 +3,7 @@ import { NextResponse } from "next/server";
 import { uuidv7 } from "uuidv7";
 import { getDataDir } from "@/lib/data-dir";
 import { getDb } from "@/lib/db/client";
-import { chunkEmbeddings, docChunks, documents, files, jobs, providers } from "@/lib/db/schema";
+import { chunkEmbeddings, docChunks, docPages, documents, files, jobs, providers } from "@/lib/db/schema";
 import { enqueueDocumentJob } from "@/lib/docs/job-queue";
 import { MAX_PDF_BYTES } from "@/lib/docs/extract";
 import { storeFileBlob } from "@/lib/files/storage";
@@ -23,6 +23,12 @@ export async function GET() {
   const chunkRows = rows.length
     ? await db.select({ documentId: docChunks.documentId, chunkId: docChunks.id }).from(docChunks).where(inArray(docChunks.documentId, rows.map((row) => row.id)))
     : [];
+  const ocrRows = rows.length
+    ? await db.select({ documentId: docPages.documentId }).from(docPages)
+      .where(and(inArray(docPages.documentId, rows.map((row) => row.id)), eq(docPages.ocr, true)))
+    : [];
+  const ocrPageCounts = new Map<string, number>();
+  for (const row of ocrRows) ocrPageCounts.set(row.documentId, (ocrPageCounts.get(row.documentId) ?? 0) + 1);
   const embeddings = activeModelKey && chunkRows.length
     ? await db.select({ chunkId: chunkEmbeddings.chunkId }).from(chunkEmbeddings)
       .where(and(eq(chunkEmbeddings.modelKey, activeModelKey), inArray(chunkEmbeddings.chunkId, chunkRows.map((row) => row.chunkId))))
@@ -45,6 +51,7 @@ export async function GET() {
     return {
       ...document,
       job: jobByDocument.get(document.id) ?? null,
+      ocrPageCount: ocrPageCounts.get(document.id) ?? 0,
       indexedModel: activeModelKey && counts.total > 0 && counts.indexed === counts.total ? activeModelKey : null,
       keywordOnly: !activeModelKey || counts.indexed < counts.total,
     };

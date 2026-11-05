@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { getDb } from "@/lib/db/client";
 import { chatMessages, chatThreads, docChunks, documents, providers } from "@/lib/db/schema";
-import { buildDocumentPrompt, citationNumbers, fitSourcesToBudget, stripInvalidCitations } from "@/lib/docs/chat";
+import { autoCiteAnswer, buildDocumentPrompt, citationNumbers, fitSourcesToBudget, stripInvalidCitations } from "@/lib/docs/chat";
 import { searchDocuments } from "@/lib/docs/retrieval";
 import { withPurpose } from "@/lib/net/safe-fetch";
 import { getSetting } from "@/lib/settings";
@@ -16,7 +16,22 @@ const requestSchema = z.object({
   threadId: z.string().uuid().optional(),
   message: z.string().trim().min(1).max(20_000),
   docIds: z.array(z.string().uuid()).max(40).optional(),
+  model: z.string().trim().min(1).max(200).optional(),
 });
+
+type CitationRecord = { n: number; chunkId: string; documentId: string; page: number; auto?: boolean };
+type BestMatchRecord = { chunkId: string; documentId: string; page: number } | null;
+type CitationPayload = { items: CitationRecord[]; bestMatch: BestMatchRecord };
+
+function readCitationPayload(value: unknown): CitationPayload {
+  if (Array.isArray(value)) return { items: value as CitationRecord[], bestMatch: null };
+  if (!value || typeof value !== "object") return { items: [], bestMatch: null };
+  const payload = value as { items?: unknown; bestMatch?: BestMatchRecord };
+  return {
+    items: Array.isArray(payload.items) ? payload.items as CitationRecord[] : [],
+    bestMatch: payload.bestMatch ?? null,
+  };
+}
 
 async function contextLength(provider: { type: string; baseUrl: string }, model: string): Promise<number> {
   if (provider.type !== "ollama") return 4096;
@@ -54,8 +69,10 @@ export async function GET(request: Request) {
     .where(and(eq(chatMessages.threadId, threadId), isNull(chatMessages.deletedAt)))
     .orderBy(asc(chatMessages.createdAt));
   const chunkIds = [...new Set(messages.flatMap((message) => {
-    const citations = message.citations as Array<{ chunkId?: string }> | null;
-    return citations?.map((citation) => citation.chunkId).filter((id): id is string => Boolean(id)) ?? [];
+    const payload = readCitationPayload(message.citations);
+    return [...payload.items, ...(payload.bestMatch ? [payload.bestMatch] : [])]
+      .map((citation) => citation.chunkId)
+      .filter((id): id is string => Boolean(id));
   }))];
   const sourceRows = chunkIds.length ? await db.select({
     chunkId: docChunks.id,
@@ -63,15 +80,24 @@ export async function GET(request: Request) {
     title: documents.title,
     version: documents.version,
     headingPath: docChunks.headingPath,
+    text: docChunks.text,
+    segments: docChunks.segments,
   }).from(docChunks).innerJoin(documents, eq(documents.id, docChunks.documentId))
     .where(inArray(docChunks.id, chunkIds)) : [];
   const sourceByChunk = new Map(sourceRows.map((source) => [source.chunkId, source]));
   return NextResponse.json({ messages: messages.map((message) => ({
     ...message,
-    citations: ((message.citations ?? []) as Array<{ n: number; chunkId: string; documentId: string; page: number }>).map((citation) => ({
+    citations: readCitationPayload(message.citations).items.map((citation) => ({
       ...citation,
       ...sourceByChunk.get(citation.chunkId),
     })),
+    bestMatch: readCitationPayload(message.citations).bestMatch
+      ? {
+        ...readCitationPayload(message.citations).bestMatch,
+        ...sourceByChunk.get(readCitationPayload(message.citations).bestMatch!.chunkId),
+        page: readCitationPayload(message.citations).bestMatch!.page,
+      }
+      : null,
   })) });
 }
 
@@ -84,6 +110,10 @@ export async function POST(request: Request) {
   const [provider] = await db.select().from(providers)
     .where(and(eq(providers.id, defaults.chat.providerId), isNull(providers.deletedAt))).limit(1);
   if (!provider) return NextResponse.json({ error: "The configured chat provider is unavailable." }, { status: 409 });
+  if (parsed.data.model && provider.type !== "ollama") {
+    return NextResponse.json({ error: "Per-request model selection is available for Ollama." }, { status: 400 });
+  }
+  const modelId = parsed.data.model ?? defaults.chat.model;
 
   let threadId = parsed.data.threadId;
   if (threadId) {
@@ -101,8 +131,14 @@ export async function POST(request: Request) {
   }
 
   const retrieved = await searchDocuments(await getDb(), parsed.data.message, { docIds: parsed.data.docIds, k: 6 });
-  const sources = fitSourcesToBudget(retrieved, await contextLength(provider, defaults.chat.model));
-  const modelKey = `${provider.type}:${defaults.chat.model}`;
+  const sources = fitSourcesToBudget(retrieved, await contextLength(provider, modelId));
+  const best = retrieved[0];
+  const bestMatch = best ? {
+    chunkId: best.chunkId,
+    documentId: best.documentId,
+    page: best.page,
+  } : null;
+  const modelKey = `${provider.type}:${modelId}`;
   const docIds = parsed.data.docIds ?? [...new Set(sources.map((source) => source.documentId))];
   await db.insert(chatMessages).values({
     threadId,
@@ -113,22 +149,34 @@ export async function POST(request: Request) {
     modelKey,
   });
   const history = await db.select().from(chatMessages).where(eq(chatMessages.threadId, threadId)).orderBy(asc(chatMessages.createdAt));
-  const messages = history.slice(-24).map((message) => ({
+  const previousMessages = history.slice(0, -1).slice(-22).map((message) => ({
     role: message.role === "assistant" ? "assistant" as const : "user" as const,
     content: message.content,
   }));
-  const system = buildDocumentPrompt(sources);
+  const messages = [
+    ...previousMessages,
+    { role: "user" as const, content: buildDocumentPrompt(sources, parsed.data.message) },
+  ];
 
   try {
-    const model = await getLanguageModel(provider.id, defaults.chat.model);
-    const result = streamText({ model, system, messages, maxRetries: 2 });
+    const model = await getLanguageModel(provider.id, modelId);
+    const result = streamText({
+      model,
+      system: "Answer questions about the supplied CBL and RSO documents using supported information.",
+      messages,
+      maxRetries: 2,
+    });
     const encoder = new TextEncoder();
     const responseStream = new ReadableStream<Uint8Array>({
       async start(controller) {
         let pending = "";
         let answer = "";
         let partial = false;
-        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "thread", threadId })}\n`));
+        controller.enqueue(encoder.encode(`${JSON.stringify({
+          type: "thread",
+          threadId,
+          bestMatch: best ? { ...best, n: 1 } : null,
+        })}\n`));
         const emit = (text: string) => {
           const clean = stripInvalidCitations(text, sources.length);
           if (!clean) return;
@@ -152,15 +200,21 @@ export async function POST(request: Request) {
           partial = true;
           controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error", error: providerError(cause) })}\n`));
         }
+        const attributed = autoCiteAnswer(answer, sources);
+        if (attributed.text !== answer) {
+          answer = attributed.text;
+          controller.enqueue(encoder.encode(`${JSON.stringify({ type: "replace", text: answer })}\n`));
+        }
+        const autoNumbers = new Set(attributed.autoNumbers);
         const citations = citationNumbers(answer, sources.length).map((number) => {
           const source = sources[number - 1]!;
-          return { n: number, chunkId: source.chunkId, documentId: source.documentId, page: source.page };
+          return { n: number, chunkId: source.chunkId, documentId: source.documentId, page: source.page, auto: autoNumbers.has(number) };
         });
         await db.insert(chatMessages).values({
           threadId: threadId!,
           role: "assistant",
           content: answer,
-          citations,
+          citations: { items: citations, bestMatch },
           docIds,
           modelKey,
           partial,
@@ -168,6 +222,7 @@ export async function POST(request: Request) {
         const used = citations.map((citation) => ({
           ...sources[citation.n - 1],
           n: citation.n,
+          auto: citation.auto,
         }));
         controller.enqueue(encoder.encode(`${JSON.stringify({ type: "sources", sources: used, partial })}\n`));
         controller.close();
