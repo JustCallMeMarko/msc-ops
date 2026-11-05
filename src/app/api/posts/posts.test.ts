@@ -118,6 +118,20 @@ describe("creative posting API", () => {
     expect(approval.status).toBe(422);
   });
 
+  it("applies creative qualifiers from the shared q query", async () => {
+    const event = await createEvent();
+    const created = await postsApi.POST(jsonRequest("http://localhost/api/posts", "POST", {
+      eventId: event.id, title: "Qualifier test", type: "general", status: "idea",
+      platforms: ["x"], scheduledAt: "2027-01-10T10:00:00.000Z",
+    }));
+    expect(created.status).toBe(201);
+    const response = await postsApi.GET(new Request(
+      `http://localhost/api/posts?q=${encodeURIComponent(`type:general platform:x status:idea event:${event.slug} from:2027-01-01 to:2027-01-20 Qualifier test`)}`,
+    ));
+    const rows = await response.json() as Array<{ title: string }>;
+    expect(rows.map((post) => post.title)).toEqual(["Qualifier test"]);
+  });
+
   it("lists scheduled-today posts in the posts_due inbox group", async () => {
     const response = await postsApi.POST(jsonRequest("http://localhost/api/posts", "POST", {
       title: "Today's post", type: "general", status: "scheduled", scheduledAt: testNow.toISOString(),

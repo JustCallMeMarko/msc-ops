@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 import { useTheme } from "next-themes";
 import { toast } from "sonner";
 import { CheckCircleIcon, CloudIcon, CpuIcon, PencilIcon, PlusIcon, TrashIcon } from "@primer/octicons-react";
@@ -19,6 +20,7 @@ import { plural } from "@/lib/utils";
 import { DEFAULT_NUDGE_TEMPLATE } from "@/lib/tasks/logic";
 import { DeadlinesContent } from "@/components/settings/deadlines-content";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { UploadDropzone } from "@/components/patterns/upload-dropzone";
 
 type Provider = {
   id: string; name: string; type: ProviderType; baseUrl: string; hasKey: boolean; keyLast4: string | null;
@@ -174,7 +176,7 @@ function BrandKitSection({ value, autoSchedule, onSave, onAutoSchedule }: {
       <div><h2 className="font-semibold">Brand Kit</h2><p className="mt-1 text-sm text-muted-foreground">Local organization assets and colors used by the creative generator.</p></div>
       <div className="grid gap-3 sm:grid-cols-2">{[
         ["Logo", "logoFileId", "image/*"], ["Heading font (TTF/OTF)", "headingFontFileId", ".ttf,.otf"], ["Body font (TTF/OTF)", "bodyFontFileId", ".ttf,.otf"], ["Frame", "frameFileId", "image/*"],
-      ].map(([label, key, accept]) => <label key={key} className="space-y-1 text-xs text-muted-foreground">{label}<Input type="file" accept={accept} onChange={(event) => void upload(key as "logoFileId" | "headingFontFileId" | "bodyFontFileId" | "frameFileId", event.target.files?.[0])} />{kit[key as keyof BrandKit] && <span className="text-success">Asset selected</span>}</label>)}</div>
+      ].map(([label, key, accept]) => <div key={key}><UploadDropzone accept={accept} onFiles={(files) => void upload(key as "logoFileId" | "headingFontFileId" | "bodyFontFileId" | "frameFileId", files[0])}>{label}</UploadDropzone>{kit[key as keyof BrandKit] && <p className="mt-1 text-xs text-success">Asset selected</p>}{(key === "logoFileId" || key === "frameFileId") && kit[key] && <Image src={`/api/files/${kit[key]}/content`} alt={`${label} preview`} width={320} height={120} unoptimized className="mt-2 h-20 w-full rounded object-contain" />}</div>)}</div>
       <div className="grid gap-3 sm:grid-cols-2">{brandColors.map((key) => <div key={key} className="flex items-center justify-between rounded border border-border px-3 py-2"><span className="text-sm capitalize">{key}</span><Popover><PopoverTrigger asChild><Button variant="outline" size="sm"><span className="size-4 rounded border border-border" style={{ backgroundColor: kit.colors[key] }} />{kit.colors[key]}</Button></PopoverTrigger><PopoverContent className="w-64 space-y-3"><Input aria-label={`${key} color hex`} value={kit.colors[key]} onChange={(event) => setKit((current) => ({ ...current, colors: { ...current.colors, [key]: event.target.value } }))} /><div className="grid grid-cols-4 gap-2">{colorSwatches.map((color) => <button key={color} type="button" aria-label={`Use ${color}`} onClick={() => setKit((current) => ({ ...current, colors: { ...current.colors, [key]: color } }))} className="size-8 rounded border border-border" style={{ backgroundColor: color }} />)}</div></PopoverContent></Popover></div>)}</div>
       <div className="rounded border border-border p-4" style={{ background: kit.colors.background, color: kit.colors.text }}><p style={{ color: kit.colors.accent }} className="text-xs font-semibold">3 DAYS TO GO</p><h3 style={{ color: kit.colors.primary }} className="mt-2 text-2xl font-semibold">Dasmariñas Week</h3><p style={{ color: kit.colors.secondary }} className="mt-1 text-sm">November 14 · Activity Center</p></div>
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-border pt-3"><label className="flex items-center gap-2 text-sm"><Switch checked={autoSchedule} onCheckedChange={(checked) => void onAutoSchedule(checked).then(() => toast.success(checked ? "Auto-scheduling enabled." : "Auto-scheduling disabled.")).catch(() => toast.error("Could not update auto-scheduling."))} />Generate posting schedules for new events</label><Button disabled={saving} onClick={() => void save()}>{saving ? "Saving…" : "Save Brand Kit"}</Button></div>

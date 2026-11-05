@@ -84,7 +84,7 @@ describe("creative posting logic", () => {
     expect(ratioWarning(1080, 1080, "instagram", "story")).toMatch(/letterboxed/);
     expect(ratioWarning(1080, 1920, "instagram", "story")).toBeNull();
     expect(canApprove({ platforms: ["x"], brandChecked: false }, [], []).missing).toEqual([
-      "Final asset", "Brand check", "x caption approval",
+      "Final asset", "Brand check", "X caption approval",
     ]);
     expect(canApprove({ platforms: ["x"], brandChecked: true }, [{ isFinal: true }], [
       { platform: "x", status: "approved", body: "ready" },

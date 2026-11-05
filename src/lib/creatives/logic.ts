@@ -1,6 +1,7 @@
 import { TZDate } from "@date-fns/tz";
 import { addDays, differenceInCalendarDays, format } from "date-fns";
 import { nextCheckin, MANILA_TIME_ZONE } from "@/lib/tasks/logic";
+import { POST_PLATFORM_LABELS } from "@/lib/ui-labels";
 
 export const POST_TYPES = [
   "poster", "save_the_date", "registration_open", "speaker_reveal", "countdown",
@@ -299,10 +300,10 @@ export function canApprove(
   for (const platform of post.platforms) {
     const caption = currentCaptions.find((entry) => entry.platform === platform);
     if (!caption || caption.status !== "approved") {
-      missing.push(`${platform} caption approval`);
+      missing.push(`${POST_PLATFORM_LABELS[platform] ?? platform} caption approval`);
       continue;
     }
-    if (captionLength(caption.body, platform as PostPlatform).over) missing.push(`${platform} caption is over the limit`);
+    if (captionLength(caption.body, platform as PostPlatform).over) missing.push(`${POST_PLATFORM_LABELS[platform] ?? platform} caption is over the limit`);
   }
   return { ok: missing.length === 0, missing };
 }

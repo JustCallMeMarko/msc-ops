@@ -4,6 +4,7 @@ import { z } from "zod";
 import { getDb } from "@/lib/db/client";
 import { captionTemplates, captions, events, members, postAssets, posts } from "@/lib/db/schema";
 import { canApprove, POST_PLATFORMS, POST_STATUSES, POST_TYPES } from "@/lib/creatives/logic";
+import { parseQuery } from "@/lib/query";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +12,17 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const { db } = await getDb();
   const filters = [isNull(posts.deletedAt)];
-  const type = url.searchParams.get("type");
-  const status = url.searchParams.get("status");
-  const platform = url.searchParams.get("platform");
-  const eventRef = url.searchParams.get("event");
-  const owner = url.searchParams.get("owner");
-  const from = url.searchParams.get("from");
-  const to = url.searchParams.get("to");
-  const query = url.searchParams.get("q");
+  const parsed = parseQuery(url.searchParams.get("q") ?? "");
+  const qualifiers = new Map(parsed.filters.map(({ key, value }) => [key, value]));
+  const value = (key: string) => url.searchParams.get(key) ?? qualifiers.get(key) ?? null;
+  const type = value("type");
+  const status = value("status");
+  const platform = value("platform");
+  const eventRef = value("event");
+  const owner = value("owner");
+  const from = value("from");
+  const to = value("to");
+  const query = parsed.text;
   if (type) filters.push(eq(posts.type, type));
   if (status) filters.push(eq(posts.status, status));
   if (platform) filters.push(arrayContains(posts.platforms, [platform]));
@@ -38,7 +42,7 @@ export async function GET(request: Request) {
   }
   if (from && /^\d{4}-\d{2}-\d{2}$/.test(from)) filters.push(gte(posts.scheduledAt, new Date(`${from}T00:00:00+08:00`)));
   if (to && /^\d{4}-\d{2}-\d{2}$/.test(to)) filters.push(lte(posts.scheduledAt, new Date(`${to}T23:59:59.999+08:00`)));
-  if (query) filters.push(ilike(posts.title, `%${query}%`));
+  if (query) filters.push(or(ilike(posts.title, `%${query}%`), ilike(events.name, `%${query}%`))!);
   const rows = await db.select({ post: posts, event: events })
     .from(posts).leftJoin(events, eq(events.id, posts.eventId))
     .where(and(...filters)).orderBy(posts.scheduledAt);
