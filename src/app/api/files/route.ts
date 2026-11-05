@@ -3,10 +3,11 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getDataDir } from "@/lib/data-dir";
 import { getDb } from "@/lib/db/client";
-import { events, fileLinks, files, tasks } from "@/lib/db/schema";
+import { events, fileLinks, files, generatedDocs, tasks } from "@/lib/db/schema";
 import { FileValidationError, validateFileContent } from "@/lib/files/validation";
 import { storeFileBlob } from "@/lib/files/storage";
 import { enumLabel } from "@/lib/ui-labels";
+import { isStale } from "@/lib/templates/generate";
 
 export const dynamic = "force-dynamic";
 const maxRequestSize = 201 * 1024 * 1024;
@@ -66,6 +67,13 @@ export async function GET(request: Request) {
     conditions.push(inArray(files.id, linked.map((item) => item.fileId)));
   }
   const rows = await db.select().from(files).where(and(...conditions)).orderBy(files.createdAt);
+  const generatedRows = rows.length
+    ? await db.select().from(generatedDocs).where(and(inArray(generatedDocs.fileId, rows.map((row) => row.id)), isNull(generatedDocs.deletedAt)))
+    : [];
+  const generatedByFile = new Map(await Promise.all(generatedRows.map(async (generated) => [
+    generated.fileId,
+    { id: generated.id, stale: await isStale(generated) },
+  ] as const)));
   const links = rows.length
     ? await db.select().from(fileLinks).where(and(inArray(fileLinks.fileId, rows.map((row) => row.id)), isNull(fileLinks.deletedAt)))
     : [];
@@ -89,6 +97,7 @@ export async function GET(request: Request) {
   }
   return NextResponse.json({ files: rows.map((row) => ({
     ...row,
+    generated: generatedByFile.get(row.id) ?? null,
     links: links.filter((link) => link.fileId === row.id).map((link) => {
       const event = link.entityType === "event" ? eventById.get(link.entityId) : undefined;
       const task = link.entityType === "task" ? taskById.get(link.entityId) : undefined;

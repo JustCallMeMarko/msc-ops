@@ -22,6 +22,9 @@ let taskActivity: typeof import("@/lib/db/schema").taskActivity;
 let checklistItems: typeof import("@/lib/db/schema").checklistItems;
 let files: typeof import("@/lib/db/schema").files;
 let fileLinks: typeof import("@/lib/db/schema").fileLinks;
+let templates: typeof import("@/lib/db/schema").templates;
+let packets: typeof import("@/lib/db/schema").packets;
+let generatedDocs: typeof import("@/lib/db/schema").generatedDocs;
 
 const testNow = new Date("2026-11-04T00:00:00.000Z");
 const jsonRequest = (url: string, method: string, value: unknown) => new Request(url, {
@@ -42,7 +45,7 @@ beforeAll(async () => {
   ]);
   ({ getDb, closeDb } = await import("@/lib/db/client"));
   ({ setClockForTests } = await import("@/lib/clock"));
-  ({ events, posts, captions, postAssets, postActivity, tasks, taskActivity, checklistItems, files, fileLinks } = await import("@/lib/db/schema"));
+  ({ events, posts, captions, postAssets, postActivity, tasks, taskActivity, checklistItems, files, fileLinks, templates, packets, generatedDocs } = await import("@/lib/db/schema"));
 });
 
 beforeEach(async () => {
@@ -56,6 +59,9 @@ beforeEach(async () => {
   await db.delete(tasks);
   await db.delete(checklistItems);
   await db.delete(fileLinks);
+  await db.delete(generatedDocs);
+  await db.delete(packets);
+  await db.delete(templates);
   await db.delete(files);
   await db.delete(events);
 });

@@ -88,6 +88,8 @@ async function openDatabase(): Promise<Database> {
     const db = drizzle(pg, { schema });
     await migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
     const database = { pg, db };
+    const { seedBuiltinTemplates } = await import("@/lib/templates/builtin");
+    await seedBuiltinTemplates(database);
     const { resumeDocumentJobs } = await import("@/lib/docs/job-queue");
     await resumeDocumentJobs(database);
     await db.execute(

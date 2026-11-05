@@ -9,17 +9,23 @@ let closeDb: typeof import("@/lib/db/client").closeDb;
 let documents: typeof import("@/lib/db/schema").documents;
 let files: typeof import("@/lib/db/schema").files;
 let jobs: typeof import("@/lib/db/schema").jobs;
+let templates: typeof import("@/lib/db/schema").templates;
+let packets: typeof import("@/lib/db/schema").packets;
+let generatedDocs: typeof import("@/lib/db/schema").generatedDocs;
 
 beforeAll(async () => {
   [documentApi] = await Promise.all([import("./route")]);
   ({ getDb, closeDb } = await import("@/lib/db/client"));
-  ({ documents, files, jobs } = await import("@/lib/db/schema"));
+  ({ documents, files, jobs, templates, packets, generatedDocs } = await import("@/lib/db/schema"));
 });
 
 beforeEach(async () => {
   const { db } = await getDb();
   await db.delete(jobs);
   await db.delete(documents);
+  await db.delete(generatedDocs);
+  await db.delete(packets);
+  await db.delete(templates);
   await db.delete(files);
 });
 

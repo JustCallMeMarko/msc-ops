@@ -11,6 +11,9 @@ let restoreApi: typeof import("./[id]/restore/route");
 let getDb: typeof import("@/lib/db/client").getDb;
 let files: typeof import("@/lib/db/schema").files;
 let fileLinks: typeof import("@/lib/db/schema").fileLinks;
+let templates: typeof import("@/lib/db/schema").templates;
+let packets: typeof import("@/lib/db/schema").packets;
+let generatedDocs: typeof import("@/lib/db/schema").generatedDocs;
 
 beforeAll(async () => {
   [filesApi, contentApi, fileApi, restoreApi] = await Promise.all([
@@ -20,12 +23,15 @@ beforeAll(async () => {
     import("./[id]/restore/route"),
   ]);
   ({ getDb } = await import("@/lib/db/client"));
-  ({ files, fileLinks } = await import("@/lib/db/schema"));
+  ({ files, fileLinks, templates, packets, generatedDocs } = await import("@/lib/db/schema"));
 });
 
 beforeEach(async () => {
   const { db } = await getDb();
   await db.delete(fileLinks);
+  await db.delete(generatedDocs);
+  await db.delete(packets);
+  await db.delete(templates);
   await db.delete(files);
 });
 

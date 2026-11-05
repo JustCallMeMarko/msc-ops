@@ -21,6 +21,7 @@ import { FINANCE_CATEGORIES, FINANCE_CATEGORY_LABELS } from "@/lib/finance/const
 import { formatPeso, parsePeso } from "@/lib/finance/logic";
 import { FINANCE_GUIDES } from "@/lib/finance/guides";
 import { ManualCitation } from "@/components/docs/manual-citation";
+import { TemplateQuickGenerate } from "@/components/templates/template-quick-generate";
 
 type Account = { id: string; name: string; kind: string; bankName: string | null; accountLast4: string | null; archivedAt: string | null; balanceCentavos: number };
 type Action = { id: string; severity: "critical" | "warning" | "info"; title: string; detail: string; dueAt?: string; action: { guide: string; step: string } | { href: string } };
@@ -385,7 +386,7 @@ export function FinanceView() {
   return <main className="space-y-5">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-semibold">Finance</h1><p className="text-sm text-muted-foreground">Next steps, auditable ledger, and RSO manual guides.</p></div>
-      {tab === "ledger" && <div className="flex flex-wrap gap-2"><a className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-secondary" href="/api/finance/export?format=xlsx"><DownloadIcon size={14} />XLSX</a><a className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary" href="/api/finance/export?format=csv">CSV</a><a className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary" href="/api/finance/export?format=xlsx&receipts=1">Receipts ZIP</a></div>}
+      <div className="flex flex-wrap gap-2"><TemplateQuickGenerate surface="finance" />{tab === "ledger" && <><a className="inline-flex h-9 items-center gap-2 rounded-md border border-border px-3 text-sm hover:bg-secondary" href="/api/finance/export?format=xlsx"><DownloadIcon size={14} />XLSX</a><a className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary" href="/api/finance/export?format=csv">CSV</a><a className="inline-flex h-9 items-center rounded-md border border-border px-3 text-sm hover:bg-secondary" href="/api/finance/export?format=xlsx&receipts=1">Receipts ZIP</a></>}</div>
     </header>
     <nav className="flex flex-wrap gap-1 border-b border-border" aria-label="Finance tabs">{tabs.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`border-b-2 px-3 py-2 text-sm ${tab === item ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{tabLabels[item]}</button>)}</nav>
     {loading && !summary ? <div className="space-y-3" aria-label="Loading Finance">{[0, 1, 2].map((n) => <div key={n} className="h-20 animate-pulse rounded-md bg-secondary" />)}</div> : null}

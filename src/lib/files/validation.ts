@@ -22,12 +22,14 @@ const EXTENSION_MIMES: Record<string, string> = {
   ".otf": "font/otf",
   ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  ".xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
   ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 
 const OFFICE_MIMES = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xlsm: "application/vnd.ms-excel.sheet.macroEnabled.12",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 } as const;
 
@@ -118,7 +120,8 @@ async function officeMime(bytes: Uint8Array, extension: string): Promise<string 
   if (xml.length > 1024 * 1024) throw new FileValidationError("Office content types file is too large.");
   const expected = extension.slice(1) as keyof typeof OFFICE_MIMES;
   const mime = OFFICE_MIMES[expected];
-  if (!mime || !xml.includes(mime.split(".").at(-1)!)) return null;
+  const marker = expected === "xlsm" ? "macroEnabled.main+xml" : mime?.split(".").at(-1);
+  if (!mime || !marker || !xml.includes(marker)) return null;
   return mime;
 }
 
@@ -127,6 +130,10 @@ export async function validateFileContent(
   originalName: string,
 ): Promise<{ bytes: Uint8Array; mime: string }> {
   const extension = extname(originalName).toLowerCase();
+  if ((extension === ".doc" || extension === ".xls")
+    && Buffer.from(input.subarray(0, 4)).equals(Buffer.from([0xd0, 0xcf, 0x11, 0xe0]))) {
+    throw new FileValidationError("Save it as .docx/.xlsx in Word/Excel first, then upload again.");
+  }
   if (extension === ".ttf" || extension === ".otf") {
     const signature = Buffer.from(input.subarray(0, 4)).toString("ascii");
     const valid = extension === ".otf"
@@ -149,7 +156,7 @@ export async function validateFileContent(
   const detected = await fileTypeFromBuffer(input);
   if (!detected) throw new FileValidationError("Unsupported file content. Allowed: PDF, PNG, JPEG, WebP, GIF, MP4, Office documents, CSV, and TXT.");
   let mime = detected.mime;
-  if ([".docx", ".xlsx", ".pptx"].includes(extension)) {
+  if ([".docx", ".xlsx", ".xlsm", ".pptx"].includes(extension)) {
     const office = await officeMime(input, extension);
     if (!office) throw expectedTypeError(extension);
     mime = office;

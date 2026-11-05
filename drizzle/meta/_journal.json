@@ -43,6 +43,13 @@
       "when": 1793841802000,
       "tag": "0005_cbl_library",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1793874948324,
+      "tag": "0006_templates",
+      "breakpoints": true
     }
   ]
 }
