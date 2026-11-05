@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 process.env.MSC_DATA_DIR = "memory://";
 
 let entriesApi: typeof import("./entries/route");
+let transfersApi: typeof import("./transfers/route");
 let verifyApi: typeof import("./verify/route");
 let voidApi: typeof import("./entries/[id]/void/route");
 let restoreApi: typeof import("./entries/[id]/restore/route");
@@ -17,8 +18,8 @@ const params = (id: string) => ({ params: Promise.resolve({ id }) });
 const eventParams = (eventId: string) => ({ params: Promise.resolve({ eventId }) });
 
 beforeAll(async () => {
-  [entriesApi, verifyApi, voidApi, restoreApi, correctApi] = await Promise.all([
-    import("./entries/route"), import("./verify/route"), import("./entries/[id]/void/route"),
+  [entriesApi, transfersApi, verifyApi, voidApi, restoreApi, correctApi] = await Promise.all([
+    import("./entries/route"), import("./transfers/route"), import("./verify/route"), import("./entries/[id]/void/route"),
     import("./entries/[id]/restore/route"), import("./entries/[id]/correct/route"),
   ]);
   ({ getDb, closeDb } = await import("@/lib/db/client"));
@@ -60,6 +61,66 @@ describe("Finance ledger API and migration", () => {
     const broken = await verifyApi.GET();
     expect(await broken.json()).toMatchObject({ ok: false, brokenAtSeq: 1 });
     await db.execute(sql`ALTER TABLE ledger_entries ENABLE TRIGGER ledger_entries_append_only`);
+  });
+
+  it("adds transfers as an atomic pair and keeps filtered account balances independent", async () => {
+    const { db } = await getDb();
+    const { accounts, ledgerEntries } = await import("@/lib/db/schema");
+    const [bank] = await db.insert(accounts).values({ name: "Interleaved Bank", kind: "bank" }).returning();
+    const [cash] = await db.insert(accounts).values({ name: "Interleaved Cash", kind: "cash" }).returning();
+    const postEntry = (accountId: string, kind: "income" | "expense", amountCentavos: number) => entriesApi.POST(request("POST", {
+      accountId,
+      eventId: null,
+      kind,
+      category: "other",
+      amountCentavos,
+      occurredOn: "2026-11-04",
+    }));
+    expect((await postEntry(bank.id, "income", 600000)).status).toBe(201);
+    expect((await postEntry(cash.id, "expense", 220000)).status).toBe(201);
+    expect((await postEntry(bank.id, "expense", 35000)).status).toBe(201);
+
+    const filtered = await entriesApi.GET(new Request(`http://localhost/api/finance/entries?q=account:${bank.id}`));
+    expect((await filtered.json() as Array<{ runningBalanceCentavos: number }>).map((entry) => entry.runningBalanceCentavos)).toEqual([600000, 565000]);
+
+    const beforeCount = (await db.select().from(ledgerEntries)).length;
+    const unpaired = await entriesApi.POST(request("POST", {
+      accountId: bank.id,
+      eventId: null,
+      kind: "transfer_out",
+      category: "other",
+      amountCentavos: 1,
+      occurredOn: "2026-11-04",
+    }));
+    expect(unpaired.status).toBe(400);
+    const response = await transfersApi.POST(request("POST", {
+      fromAccountId: bank.id,
+      toAccountId: cash.id,
+      eventId: null,
+      amountCentavos: 170000,
+      occurredOn: "2026-11-04",
+      description: "Cash float",
+    }));
+    expect(response.status).toBe(201);
+    const result = await response.json() as { entries: Array<{ accountId: string; amountCentavos: number; kind: string; seq: number; prevHash: string; hash: string }> };
+    expect(result.entries).toHaveLength(2);
+    expect(result.entries.map((entry) => entry.kind)).toEqual(["transfer_out", "transfer_in"]);
+    expect(result.entries.map((entry) => entry.accountId)).toEqual([bank.id, cash.id]);
+    expect(result.entries.map((entry) => entry.amountCentavos)).toEqual([170000, 170000]);
+    expect(result.entries[1].seq).toBe(result.entries[0].seq + 1);
+    expect(result.entries[1].prevHash).toBe(result.entries[0].hash);
+    expect((await db.select().from(ledgerEntries)).length).toBe(beforeCount + 2);
+
+    const transferBalances = await entriesApi.GET(new Request(`http://localhost/api/finance/entries?q=account:${bank.id}`));
+    expect((await transferBalances.json() as Array<{ runningBalanceCentavos: number }>).map((entry) => entry.runningBalanceCentavos)).toEqual([600000, 565000, 395000]);
+    const invalid = await transfersApi.POST(request("POST", {
+      fromAccountId: bank.id,
+      toAccountId: bank.id,
+      amountCentavos: 1,
+      occurredOn: "2026-11-04",
+    }));
+    expect(invalid.status).toBe(400);
+    expect((await db.select().from(ledgerEntries)).length).toBe(beforeCount + 2);
   });
 
   it("clears missing receipts, snapshots liquidation items, and exports all SCOA sheets", async () => {

@@ -1,5 +1,5 @@
 import { format, differenceInCalendarDays, parseISO } from "date-fns";
-import { FINANCE_CATEGORIES, type FinanceCategory, type FinanceKind } from "./constants";
+import { FINANCE_CATEGORIES, FINANCE_CATEGORY_LABELS, type FinanceCategory, type FinanceKind } from "./constants";
 import { FINANCE_GUIDES } from "./guides";
 
 export type LedgerEntry = {
@@ -266,13 +266,27 @@ export function whatToDoNow(state: FinanceState, now = new Date()): FinanceActio
     });
   }
 
+  const budgetOverages = new Map<string, { eventName: string; amountCentavos: number; categories: Set<FinanceCategory> }>();
   for (const budget of state.budgets.filter((row) => row.actualCentavos > row.plannedCentavos)) {
+    const overage = budgetOverages.get(budget.eventId) ?? {
+      eventName: budget.eventName,
+      amountCentavos: 0,
+      categories: new Set<FinanceCategory>(),
+    };
+    overage.amountCentavos += budget.actualCentavos - budget.plannedCentavos;
+    overage.categories.add(budget.category);
+    budgetOverages.set(budget.eventId, overage);
+  }
+  for (const [eventId, overage] of budgetOverages) {
+    const categories = FINANCE_CATEGORIES
+      .filter((category) => overage.categories.has(category))
+      .map((category) => FINANCE_CATEGORY_LABELS[category].toLowerCase());
     items.push({
-      id: `budget-over-${budget.eventId}-${budget.category}`,
+      id: `budget-over-${eventId}`,
       severity: "info",
-      title: `${budget.eventName} is over budget`,
-      detail: `${formatPeso(budget.actualCentavos - budget.plannedCentavos)} over the ${budget.category.replaceAll("_", " ")} plan.`,
-      action: { href: `/finance?tab=budgets&event=${budget.eventId}` },
+      title: `${overage.eventName} is ${formatPeso(overage.amountCentavos)} over budget (${categories.join(", ")})`,
+      detail: "Review the event budget and actual expenses by category.",
+      action: { href: `/finance?tab=budgets&event=${eventId}` },
     });
   }
 

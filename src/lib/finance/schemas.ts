@@ -13,7 +13,7 @@ export const financeAccountSchema = z.object({
 export const financeEntrySchema = z.object({
   accountId: z.string().uuid(),
   eventId: z.string().uuid().nullable().default(null),
-  kind: z.enum(["income", "expense", "transfer_out", "transfer_in"]),
+  kind: z.enum(["income", "expense"]),
   category: z.enum(FINANCE_CATEGORIES),
   amountCentavos: z.number().int().positive().safe(),
   occurredOn: z.string().date(),
@@ -21,6 +21,16 @@ export const financeEntrySchema = z.object({
   description: z.string().trim().max(2000).default(""),
   orNumber: z.string().trim().max(120).default(""),
   approvedByMemberId: z.string().uuid().nullable().default(null),
+});
+
+export const financeTransferSchema = z.object({
+  fromAccountId: z.string().uuid(),
+  toAccountId: z.string().uuid(),
+  eventId: z.string().uuid().nullable().default(null),
+  amountCentavos: z.number().int().positive().safe(),
+  occurredOn: z.string().date(),
+  description: z.string().trim().max(2000).default(""),
+  orNumber: z.string().trim().max(120).default(""),
 });
 
 export const financeCorrectionSchema = financeEntrySchema.extend({

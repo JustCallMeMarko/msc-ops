@@ -5,7 +5,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { AlertIcon, CheckCircleIcon, DownloadIcon, PlusIcon, ShieldCheckIcon } from "@primer/octicons-react";
+import { AlertIcon, DownloadIcon, InfoIcon, PlusIcon, ShieldCheckIcon } from "@primer/octicons-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Combobox } from "@/components/ui/combobox";
@@ -26,7 +26,7 @@ type Action = { id: string; severity: "critical" | "warning" | "info"; title: st
 type Summary = { accounts: Account[]; totalBalanceCentavos: number; unliquidatedCentavos: number; missingReceiptCount: number; whatToDoNow: Action[]; budgets: Array<{ eventId: string; eventName: string; category: string; plannedCentavos: number; actualCentavos: number; varianceCentavos: number }>; liquidations: Array<{ eventId: string; eventName: string; dueAt: string | null; overdue: boolean; unliquidatedCentavos: number; status: string }> };
 type Entry = { id: string; seq: number; accountId: string; eventId: string | null; kind: string; category: string; amountCentavos: number; occurredOn: string; counterparty: string; description: string; orNumber: string; reason: string; targetEntryId: string | null; replacesEntryId: string | null; event?: { name: string } | null; account?: { name: string } | null; runningBalanceCentavos: number; receiptCount: number; missingReceipt: boolean; hash: string };
 type EventOption = { id: string; name: string; slug: string };
-type EntryForm = { kind: string; amount: string; category: string; eventId: string; accountId: string; occurredOn: Date; description: string; orNumber: string };
+type EntryForm = { kind: "expense" | "income" | "transfer"; amount: string; category: string; eventId: string; accountId: string; fromAccountId: string; toAccountId: string; occurredOn: Date; description: string; orNumber: string };
 type Receipt = { id: string; fileId: string; addedAt: string; file: { originalName: string; mime: string; size: number } };
 type Liquidation = NonNullable<Summary["liquidations"]>[number] & { entries: Entry[] };
 type Reconciliation = { reconciliation: { id: string; statementDate: string; statementBalanceCentavos: number; computedBalanceCentavos: number; note: string }; account: { id: string; name: string } };
@@ -55,7 +55,8 @@ export function FinanceView() {
   const [liquidations, setLiquidations] = useState<Liquidation[]>([]);
   const [reconciliations, setReconciliations] = useState<Reconciliation[]>([]);
   const [computedBalanceCentavos, setComputedBalanceCentavos] = useState<number | null>(null);
-  const [entryForm, setEntryForm] = useState<EntryForm>({ kind: "expense", amount: "", category: "other", eventId: "", accountId: "", occurredOn: new Date(), description: "", orNumber: "" });
+  const [entryForm, setEntryForm] = useState<EntryForm>({ kind: "expense", amount: "", category: "other", eventId: "", accountId: "", fromAccountId: "", toAccountId: "", occurredOn: new Date(), description: "", orNumber: "" });
+  const [showAllActions, setShowAllActions] = useState(false);
   const [receipt, setReceipt] = useState<File | null>(null);
   const [voidReason, setVoidReason] = useState("");
   const [restoreReason, setRestoreReason] = useState("");
@@ -84,8 +85,15 @@ export function FinanceView() {
     ]);
     if (summaryResponse.ok) {
       const next = await summaryResponse.json() as Summary;
+      const activeAccounts = next.accounts.filter((account) => !account.archivedAt);
+      const defaultFromAccountId = activeAccounts.find((account) => account.kind === "bank")?.id || activeAccounts[0]?.id || "";
       setSummary(next);
-      setEntryForm((current) => ({ ...current, accountId: current.accountId || next.accounts.find((account) => !account.archivedAt)?.id || "" }));
+      setEntryForm((current) => ({
+        ...current,
+        accountId: current.accountId || activeAccounts[0]?.id || "",
+        fromAccountId: current.fromAccountId || defaultFromAccountId,
+        toAccountId: current.toAccountId || activeAccounts.find((account) => account.id !== defaultFromAccountId)?.id || "",
+      }));
     }
     if (entriesResponse.ok) setEntries(await entriesResponse.json() as Entry[]);
     if (eventResponse.ok) setEvents(await eventResponse.json() as EventOption[]);
@@ -189,14 +197,43 @@ export function FinanceView() {
   async function addEntry(event: React.FormEvent) {
     event.preventDefault();
     const amountCentavos = parsePeso(entryForm.amount);
-    if (amountCentavos === null || amountCentavos <= 0 || !entryForm.accountId) return;
+    const isTransfer = entryForm.kind === "transfer";
+    if (
+      amountCentavos === null
+      || amountCentavos <= 0
+      || (isTransfer
+        ? !entryForm.fromAccountId || !entryForm.toAccountId || entryForm.fromAccountId === entryForm.toAccountId
+        : !entryForm.accountId)
+    ) return;
     const occurredOn = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Manila" }).format(entryForm.occurredOn);
-    const response = await apiFetch("/api/finance/entries", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ accountId: entryForm.accountId, eventId: entryForm.eventId || null, kind: entryForm.kind, category: entryForm.category, amountCentavos, occurredOn, description: entryForm.description, orNumber: entryForm.orNumber }),
+    const response = await apiFetch(isTransfer ? "/api/finance/transfers" : "/api/finance/entries", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(isTransfer
+        ? {
+          fromAccountId: entryForm.fromAccountId,
+          toAccountId: entryForm.toAccountId,
+          eventId: entryForm.eventId || null,
+          amountCentavos,
+          occurredOn,
+          description: entryForm.description,
+          orNumber: entryForm.orNumber,
+        }
+        : {
+          accountId: entryForm.accountId,
+          eventId: entryForm.eventId || null,
+          kind: entryForm.kind,
+          category: entryForm.category,
+          amountCentavos,
+          occurredOn,
+          description: entryForm.description,
+          orNumber: entryForm.orNumber,
+        }),
     });
     if (!response.ok) return toast.error("Could not add this entry.");
-    const entry = await response.json() as Entry;
+    const saved = isTransfer ? await response.json() as { entries: Entry[] } : null;
+    const entry = saved ? saved.entries.find((item) => item.kind === "transfer_in") ?? saved.entries[0] : await response.json() as Entry;
+    if (!entry) return toast.error("Transfer was saved, but its entries could not be loaded.");
     if (receipt) {
       const form = new FormData();
       form.set("file", receipt); form.set("kind", "receipt"); form.set("entityType", "ledger_entry"); form.set("entityId", entry.id); form.set("role", "receipt");
@@ -208,7 +245,7 @@ export function FinanceView() {
     }
     setReceipt(null);
     setEntryForm((current) => ({ ...current, amount: "", description: "", orNumber: "" }));
-    toast.success("Ledger entry added.");
+    toast.success(isTransfer ? "Account transfer added." : "Ledger entry added.");
     await load();
   }
 
@@ -334,7 +371,15 @@ export function FinanceView() {
     await load();
   }
 
-  const validEntry = Boolean(parsePeso(entryForm.amount) && entryForm.accountId && entryForm.category);
+  const isTransfer = entryForm.kind === "transfer";
+  const parsedEntryAmount = parsePeso(entryForm.amount);
+  const validEntry = Boolean(
+    parsedEntryAmount !== null
+    && parsedEntryAmount > 0
+    && (isTransfer
+      ? entryForm.fromAccountId && entryForm.toAccountId && entryForm.fromAccountId !== entryForm.toAccountId
+      : entryForm.accountId && entryForm.category),
+  );
   return <main className="space-y-5">
     <header className="flex flex-wrap items-start justify-between gap-3">
       <div><h1 className="text-2xl font-semibold">Finance</h1><p className="text-sm text-muted-foreground">Next steps, auditable ledger, and RSO manual guides.</p></div>
@@ -343,43 +388,57 @@ export function FinanceView() {
     <nav className="flex flex-wrap gap-1 border-b border-border" aria-label="Finance tabs">{tabs.map((item) => <button key={item} type="button" onClick={() => setTab(item)} className={`border-b-2 px-3 py-2 text-sm ${tab === item ? "border-primary font-medium" : "border-transparent text-muted-foreground hover:text-foreground"}`}>{tabLabels[item]}</button>)}</nav>
     {loading && !summary ? <div className="space-y-3" aria-label="Loading Finance">{[0, 1, 2].map((n) => <div key={n} className="h-20 animate-pulse rounded-md bg-secondary" />)}</div> : null}
 
-    {tab === "overview" && summary && <div className="space-y-5">
+    {tab === "overview" && summary && <div className="grid items-start gap-5 xl:grid-cols-[minmax(0,1.25fr)_minmax(420px,1fr)]">
       <section className="space-y-2"><h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">What to do now</h2>
-        {summary.whatToDoNow.length ? summary.whatToDoNow.map((item) => {
+        {summary.whatToDoNow.length ? (showAllActions ? summary.whatToDoNow : summary.whatToDoNow.slice(0, 5)).map((item) => {
           const action = item.action;
           const href = "guide" in action ? `/finance?tab=guides&guide=${action.guide}&step=${action.step}` : action.href;
           return <article key={item.id} className={`flex flex-wrap items-center gap-3 rounded-md border p-3 ${severityStyle[item.severity]}`}>
-          {item.severity === "critical" ? <AlertIcon size={16} /> : <CheckCircleIcon size={16} />}
+          {item.severity === "info" ? <InfoIcon size={16} className="shrink-0" /> : <AlertIcon size={16} className="shrink-0" />}
           <div className="min-w-0 flex-1"><p className="font-medium">{item.title}</p><p className="text-sm opacity-80">{item.detail}</p></div>
           <Link className="inline-flex h-8 items-center rounded-md border border-current px-3 text-xs font-medium" href={href}>{"guide" in action ? "Open guide" : "Open"}</Link>
         </article>;
         }) : <p className="rounded-md border border-border bg-card p-4 text-sm text-muted-foreground">Nothing urgent. Check the ledger and reconcile on schedule.</p>}
+        {summary.whatToDoNow.length > 5 && <Button type="button" size="sm" variant="ghost" onClick={() => setShowAllActions((current) => !current)}>{showAllActions ? "Show fewer" : `Show ${summary.whatToDoNow.length - 5} more`}</Button>}
       </section>
-      <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">{summary.accounts.map((account) => <article key={account.id} className="rounded-md border border-border bg-card p-4"><div className="flex justify-between gap-2"><span className="font-medium">{account.name}</span><Label color={account.archivedAt ? "gray" : account.kind === "bank" ? "blue" : "green"}>{account.archivedAt ? "Archived" : account.kind === "ewallet" ? "E-wallet" : account.kind[0].toUpperCase() + account.kind.slice(1)}</Label></div><p className="mono mt-3 text-xl font-semibold">{pesos(account.balanceCentavos)}</p><p className="mt-1 text-xs text-muted-foreground">{account.bankName ?? ""}{account.accountLast4 ? ` · •••• ${account.accountLast4}` : ""}</p></article>)}</section>
-      {!summary.accounts.length && <AccountForm onSaved={load} />}
-      <form onSubmit={(event) => void addEntry(event)} className="space-y-3 rounded-md border border-border bg-card p-4">
-        <h2 className="font-semibold">Quick add</h2>
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="inline-flex rounded-md border border-border p-1">{["expense", "income"].map((kind) => <Button key={kind} type="button" size="sm" variant={entryForm.kind === kind ? "default" : "ghost"} onClick={() => setEntryForm({ ...entryForm, kind })}>{kind === "expense" ? "Expense" : "Income"}</Button>)}</div>
-          <Input aria-label="Amount in pesos" inputMode="decimal" value={entryForm.amount} onChange={(event) => setEntryForm({ ...entryForm, amount: event.target.value })} onBlur={() => { const parsed = parsePeso(entryForm.amount); if (parsed !== null) setEntryForm({ ...entryForm, amount: formatPeso(parsed) }); }} placeholder="₱ 0.00" className="mono w-36" />
-          <CategorySelect value={entryForm.category} onChange={(category) => setEntryForm({ ...entryForm, category })} />
-          <Combobox options={events.map((event) => ({ value: event.id, label: event.name }))} value={entryForm.eventId} onChange={(eventId) => setEntryForm({ ...entryForm, eventId })} placeholder="Event (optional)" buttonClassName="w-52" />
-          <Combobox options={summary.accounts.filter((account) => !account.archivedAt).map((account) => ({ value: account.id, label: account.name }))} value={entryForm.accountId} onChange={(accountId) => setEntryForm({ ...entryForm, accountId })} placeholder="Account" buttonClassName="w-48" />
-          <DatePicker value={entryForm.occurredOn} onChange={(occurredOn) => occurredOn && setEntryForm({ ...entryForm, occurredOn })} ariaLabel="Transaction date" />
-        </div>
-        <div className="grid gap-2 md:grid-cols-[1fr_180px_200px_auto]"><Input aria-label="Description" value={entryForm.description} onChange={(event) => setEntryForm({ ...entryForm, description: event.target.value })} placeholder="Description" /><Input aria-label="OR number" value={entryForm.orNumber} onChange={(event) => setEntryForm({ ...entryForm, orNumber: event.target.value })} placeholder="OR #" /><label className="flex min-h-9 items-center gap-2 rounded-md border border-dashed border-border px-3 text-xs text-muted-foreground"><input type="file" accept="image/*,application/pdf" onChange={(event) => setReceipt(event.target.files?.[0] ?? null)} className="min-w-0 max-w-full text-xs" />{receipt?.name ?? "Receipt (optional)"}</label><Button disabled={!validEntry}><PlusIcon size={14} />Add entry</Button></div>
-      </form>
+      <div className="space-y-5">
+        <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-2">{summary.accounts.map((account) => <article key={account.id} className="rounded-md border border-border bg-card p-4"><div className="flex justify-between gap-2"><span className="font-medium">{account.name}</span><Label color={account.archivedAt ? "gray" : account.kind === "bank" ? "blue" : "green"}>{account.archivedAt ? "Archived" : account.kind === "ewallet" ? "E-wallet" : account.kind[0].toUpperCase() + account.kind.slice(1)}</Label></div><p className="mono mt-3 text-xl font-semibold">{pesos(account.balanceCentavos)}</p><p className="mt-1 text-xs text-muted-foreground">{account.bankName ?? ""}{account.accountLast4 ? ` · •••• ${account.accountLast4}` : ""}</p></article>)}</section>
+        {!summary.accounts.length && <AccountForm onSaved={load} />}
+        <form onSubmit={(event) => void addEntry(event)} className="space-y-3 rounded-md border border-border bg-card p-4">
+          <h2 className="font-semibold">Quick add</h2>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <div className="col-span-full inline-flex w-fit rounded-md border border-border p-1">
+              {(["expense", "income", "transfer"] as const).map((kind) => <Button key={kind} type="button" size="sm" variant={entryForm.kind === kind ? "default" : "ghost"} onClick={() => setEntryForm((current) => ({ ...current, kind }))}>{kind === "expense" ? "Expense" : kind === "income" ? "Income" : "Transfer"}</Button>)}
+            </div>
+            <Input aria-label="Amount in pesos" inputMode="decimal" value={entryForm.amount} onChange={(event) => setEntryForm({ ...entryForm, amount: event.target.value })} onBlur={() => { const parsed = parsePeso(entryForm.amount); if (parsed !== null) setEntryForm({ ...entryForm, amount: formatPeso(parsed) }); }} placeholder="₱ 0.00" className="mono min-w-0" />
+            {!isTransfer && <CategorySelect value={entryForm.category} onChange={(category) => setEntryForm({ ...entryForm, category })} />}
+            <Combobox options={events.map((event) => ({ value: event.id, label: event.name }))} value={entryForm.eventId} onChange={(eventId) => setEntryForm({ ...entryForm, eventId })} placeholder="Event (optional)" buttonClassName="w-full" />
+            {isTransfer ? <div className="col-span-full grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-end gap-2">
+              <div className="min-w-0 space-y-1"><span className="block text-xs text-muted-foreground">From account</span><Combobox options={summary.accounts.filter((account) => !account.archivedAt).map((account) => ({ value: account.id, label: account.name }))} value={entryForm.fromAccountId} onChange={(fromAccountId) => setEntryForm({ ...entryForm, fromAccountId })} placeholder="Choose account" buttonClassName="w-full" /></div>
+              <span aria-hidden="true" className="text-muted-foreground">→</span>
+              <div className="min-w-0 space-y-1"><span className="block text-xs text-muted-foreground">To account</span><Combobox options={summary.accounts.filter((account) => !account.archivedAt).map((account) => ({ value: account.id, label: account.name }))} value={entryForm.toAccountId} onChange={(toAccountId) => setEntryForm({ ...entryForm, toAccountId })} placeholder="Choose account" buttonClassName="w-full" /></div>
+            </div> : <Combobox options={summary.accounts.filter((account) => !account.archivedAt).map((account) => ({ value: account.id, label: account.name }))} value={entryForm.accountId} onChange={(accountId) => setEntryForm({ ...entryForm, accountId })} placeholder="Account" buttonClassName="w-full" />}
+            <DatePicker value={entryForm.occurredOn} onChange={(occurredOn) => occurredOn && setEntryForm({ ...entryForm, occurredOn })} ariaLabel="Transaction date" />
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <Input aria-label="Description" value={entryForm.description} onChange={(event) => setEntryForm({ ...entryForm, description: event.target.value })} placeholder="Description" className="sm:col-span-2" />
+            <Input aria-label="OR number" value={entryForm.orNumber} onChange={(event) => setEntryForm({ ...entryForm, orNumber: event.target.value })} placeholder="OR #" />
+            <label className="flex min-h-9 min-w-0 cursor-pointer items-center gap-2 rounded-md border border-dashed border-border px-3 text-xs text-muted-foreground focus-within:ring-2 focus-within:ring-ring"><input type="file" accept="image/*,application/pdf" onChange={(event) => setReceipt(event.target.files?.[0] ?? null)} className="sr-only" /><span className="min-w-0 truncate">{receipt?.name ?? "Receipt (optional)"}</span></label>
+            <Button disabled={!validEntry} className="sm:col-span-2"><PlusIcon size={14} />{isTransfer ? "Add transfer" : "Add entry"}</Button>
+          </div>
+        </form>
+      </div>
     </div>}
 
     {tab === "ledger" && <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2"><div className="min-w-64 flex-1"><FilterBar placeholder="account:China Bank event:past-career-forum category:food is:missing-receipt from:2026-01-01" /></div><span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-1 text-xs text-success"><ShieldCheckIcon size={13} />Chain verified</span></div>
+      <div className="flex flex-wrap items-center gap-2"><div className="min-w-64 flex-1"><FilterBar placeholder={'account:"China Bank" event:past-career-forum category:food is:missing-receipt from:2026-01-01'} /></div><span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-1 text-xs text-success"><ShieldCheckIcon size={13} />Chain verified</span></div>
       <div ref={listRef} className="h-[60vh] overflow-auto rounded-md border border-border bg-card">
-        <table className="w-full min-w-[1100px] text-left text-xs"><thead className="sticky top-0 z-10 bg-secondary text-muted-foreground"><tr>{["Seq", "Date", "Kind", "Category", "Event", "Description", "OR#", "Amount", "Balance", "Receipt"].map((item) => <th key={item} className="p-3 font-medium">{item}</th>)}</tr></thead>
+        <table className="w-full min-w-[1220px] text-left text-xs"><thead className="sticky top-0 z-10 bg-secondary text-muted-foreground"><tr>{["Seq", "Date", "Kind", "Category", "Account", "Event", "Description", "OR#", "Amount", "Account balance", "Receipt"].map((item) => <th key={item} className="p-3 font-medium">{item}</th>)}</tr></thead>
           <tbody style={{ height: virtualizer.getTotalSize(), position: "relative" }}>{virtualizer.getVirtualItems().map((virtualRow) => {
             const entry = entries[virtualRow.index];
             return <tr key={entry.id} onClick={() => router.push(`/finance?tab=ledger&panel=entry&id=${entry.id}`)} className={`absolute left-0 right-0 cursor-pointer border-b border-border hover:bg-secondary/60 ${["void", "restore"].includes(entry.kind) ? "text-muted-foreground line-through" : ""}`} style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
               <td className="mono p-3">#{entry.seq}</td><td className="p-3">{displayDay(entry.occurredOn)}</td><td className="p-3"><Label color={entry.kind === "income" ? "green" : entry.kind === "expense" ? "red" : "gray"}>{kindLabels[entry.kind] ?? entry.kind}</Label></td>
-              <td className="p-3">{FINANCE_CATEGORY_LABELS[entry.category as keyof typeof FINANCE_CATEGORY_LABELS] ?? entry.category}</td><td className="p-3">{entry.event?.name ?? "—"}</td><td className="max-w-[250px] truncate p-3">{entry.description || entry.counterparty}{entry.reason ? ` · ${entry.reason}` : ""}</td><td className="mono p-3">{entry.orNumber || "—"}</td>
+              <td className="p-3">{FINANCE_CATEGORY_LABELS[entry.category as keyof typeof FINANCE_CATEGORY_LABELS] ?? entry.category}</td><td className="max-w-[180px] truncate p-3">{entry.account?.name ?? "—"}</td><td className="max-w-[180px] truncate p-3">{entry.event?.name ?? "—"}</td><td className="max-w-[250px] truncate p-3">{entry.description || entry.counterparty}{entry.reason ? ` · ${entry.reason}` : ""}</td><td className="mono p-3">{entry.orNumber || "—"}</td>
               <td className={`mono p-3 text-right ${entry.kind === "income" ? "text-success" : entry.kind === "expense" ? "text-destructive" : ""}`}>{pesos(entry.amountCentavos)}</td><td className="mono p-3 text-right">{pesos(entry.runningBalanceCentavos)}</td>
               <td className="p-3">{entry.receiptCount ? <span className="text-success">Receipt</span> : entry.kind === "expense" ? <Label color="yellow">Missing receipt</Label> : "—"}</td>
             </tr>;
