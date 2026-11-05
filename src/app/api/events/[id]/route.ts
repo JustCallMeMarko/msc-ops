@@ -3,11 +3,12 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { now } from "@/lib/clock";
 import { getDb } from "@/lib/db/client";
-import { checklistItems, events, tasks } from "@/lib/db/schema";
+import { checklistItems, events, posts, postingRules, taskActivity, tasks } from "@/lib/db/schema";
 import { eventByRef, eventHolidays, eventRules } from "@/lib/events/db-utils";
 import { rescheduleChecklist, type EventRecord, type ExistingChecklistItem } from "@/lib/events/logic";
 import { lumaUrlSchema } from "@/lib/events/validation";
 import { addTaskActivity } from "@/lib/tasks/route-utils";
+import { reschedulePosts, type CreativeEvent } from "@/lib/creatives/logic";
 
 type Context = { params: Promise<{ id: string }> };
 
@@ -105,6 +106,52 @@ export async function PATCH(request: Request, context: Context) {
           field: "dueAt", oldValue: task.dueAt, newValue: linked.dueAt, source: "event_reschedule",
         }, currentTime);
       }
+    }
+  }
+  const cancellingNow = input.approvalStatus === "cancelled" && current.approvalStatus !== "cancelled";
+  const shouldReschedulePosts = ["startsAt", "endsAt"].some((key) => key in input) || cancellingNow;
+  if (shouldReschedulePosts) {
+    const [eventPosts, rules] = await Promise.all([
+      db.select().from(posts).where(and(eq(posts.eventId, current.id), isNull(posts.deletedAt))),
+      db.select().from(postingRules).where(isNull(postingRules.deletedAt)),
+    ]);
+    const result = reschedulePosts(
+      eventPosts,
+      current as EventRecord as CreativeEvent,
+      updated as EventRecord as CreativeEvent,
+      rules.map((rule) => ({ ...rule, anchor: rule.anchor as "event_start" | "event_end" })),
+    );
+    const currentPosts = new Map(eventPosts.map((post) => [post.id, post]));
+    for (const post of result.posts) {
+      const previous = currentPosts.get(post.id);
+      if (!previous || (previous.scheduledAt?.getTime() === post.scheduledAt?.getTime() && previous.status === post.status && previous.eventId === post.eventId)) continue;
+      await db.update(posts).set({
+        scheduledAt: post.scheduledAt,
+        status: post.status,
+        eventId: post.eventId,
+        updatedAt: currentTime,
+      }).where(eq(posts.id, post.id));
+    }
+    const cancelledTaskIds: string[] = [];
+    for (const taskId of result.cancelledTaskIds) {
+      const [task] = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
+      if (!task || task.status === "done" || task.status === "cancelled") continue;
+      await db.update(tasks).set({ status: "cancelled", completedAt: currentTime, updatedAt: currentTime }).where(eq(tasks.id, taskId));
+      cancelledTaskIds.push(taskId);
+    }
+    for (const item of result.taskDueDates) {
+      const [task] = await db.select().from(tasks).where(eq(tasks.id, item.taskId)).limit(1);
+      if (!task) continue;
+      if (task.status === "done" || task.status === "cancelled") continue;
+      await db.update(tasks).set({ dueAt: item.dueAt, updatedAt: currentTime }).where(eq(tasks.id, item.taskId));
+      await addTaskActivity(db, task.id, "field_change", "", { field: "dueAt", source: "post_reschedule" }, currentTime);
+    }
+    if (result.noticePost) await db.insert(posts).values(result.noticePost);
+    if (cancellingNow && cancelledTaskIds.length) {
+      await db.insert(taskActivity).values(cancelledTaskIds.map((taskId) => ({
+        taskId, kind: "status_change", body: "todo → cancelled",
+        meta: { source: "event_cancelled" }, at: currentTime,
+      })));
     }
   }
   return NextResponse.json(updated);

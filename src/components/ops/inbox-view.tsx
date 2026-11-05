@@ -26,7 +26,11 @@ type InboxTask = {
   dueAt: string | null; nextCheckinAt: string | null; createdAt: string; lastCheckinAt: string | null;
   snoozedUntil: string | null; reason: string; assignee: Person | null; committee: Committee;
 };
-type InboxData = Record<"checkin_due" | "overdue" | "due_today" | "due_this_week", InboxTask[]>;
+type InboxPost = {
+  id: string; title: string; status: string; caption: string;
+  event: { name: string; slug: string } | null;
+};
+type InboxData = Record<"checkin_due" | "overdue" | "due_today" | "due_this_week", InboxTask[]> & { posts_due: InboxPost[] };
 
 const groupLabels = [
   ["checkin_due", "Check-ins due"],
@@ -96,6 +100,14 @@ export function InboxView() {
     } catch {
       toast.error("Could not copy the nudge.");
     }
+  }
+
+  async function copyPostCaption(post: InboxPost) {
+    if (!post.caption) return toast.error("No caption is available yet.");
+    try {
+      await navigator.clipboard.writeText(post.caption);
+      toast.success("Caption copied.");
+    } catch { toast.error("Could not copy the caption."); }
   }
 
   async function saveReply(task: InboxTask) {
@@ -205,5 +217,16 @@ export function InboxView() {
         </div>}
       </article>)}</div>
     </section>)}
+    {data.posts_due.length > 0 && <section>
+      <h2 className="mb-3 flex items-center gap-2 text-sm font-semibold uppercase tracking-wide text-muted-foreground">Posts due today<span className="mono rounded bg-secondary px-1.5 py-0.5 text-xs">{data.posts_due.length}</span></h2>
+      <div className="space-y-2">{data.posts_due.map((post) => <article key={post.id} className="flex flex-wrap items-center gap-3 rounded-md border border-border bg-card p-4">
+        <div className="min-w-0 flex-1">
+          <Link href={`/creatives/${post.id}`} className="text-sm font-semibold hover:text-primary">{post.title}</Link>
+          {post.event && <p className="mt-1 text-xs text-muted-foreground"><Link href={`/events/${post.event.slug}?tab=posts`} className="hover:text-primary">{post.event.name}</Link> · scheduled today</p>}
+        </div>
+        <Button size="sm" variant="outline" onClick={() => void copyPostCaption(post)}><CopyIcon size={14} />Copy caption</Button>
+        <a href={`/api/posts/${post.id}/kit`} className="inline-flex h-8 items-center justify-center gap-2 rounded-md border border-input bg-background px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground">Download kit</a>
+      </article>)}</div>
+    </section>}
   </div>;
 }

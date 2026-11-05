@@ -22,6 +22,13 @@
       "when": 1793832284380,
       "tag": "0002_short_proudstar",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1793834887331,
+      "tag": "0003_next_the_hunter",
+      "breakpoints": true
     }
   ]
 }

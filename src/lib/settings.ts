@@ -16,6 +16,20 @@ export const aiDefaultsSchema = z.object({
   embedding: z.object({ providerId: z.string().uuid(), model: z.string().min(1) }).optional(),
 });
 
+export const brandKitSchema = z.object({
+  logoFileId: z.string().uuid().optional(),
+  colors: z.object({
+    primary: z.string().regex(/^#[0-9a-f]{6}$/i),
+    secondary: z.string().regex(/^#[0-9a-f]{6}$/i),
+    accent: z.string().regex(/^#[0-9a-f]{6}$/i),
+    background: z.string().regex(/^#[0-9a-f]{6}$/i),
+    text: z.string().regex(/^#[0-9a-f]{6}$/i),
+  }),
+  headingFontFileId: z.string().uuid().optional(),
+  bodyFontFileId: z.string().uuid().optional(),
+  frameFileId: z.string().uuid().optional(),
+});
+
 export const settingSchemas = {
   "org.profile": orgProfileSchema,
   "ai.defaults": aiDefaultsSchema,
@@ -23,6 +37,8 @@ export const settingSchemas = {
   "privacy.sensitiveLocalOnly": z.boolean(),
   "setup.completed": z.boolean(),
   "tasks.nudgeTemplate": z.string().max(2000),
+  "brand.kit": brandKitSchema,
+  "creatives.autoSchedule": z.boolean(),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
@@ -35,6 +51,10 @@ const defaults: { [K in SettingKey]: SettingValue<K> } = {
   "privacy.sensitiveLocalOnly": false,
   "setup.completed": false,
   "tasks.nudgeTemplate": DEFAULT_NUDGE_TEMPLATE,
+  "brand.kit": {
+    colors: { primary: "#0969da", secondary: "#1f6feb", accent: "#bf8700", background: "#0d1117", text: "#f0f6fc" },
+  },
+  "creatives.autoSchedule": true,
 };
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {
