@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { z } from "zod";
 import { getDb } from "@/lib/db/client";
 import { settings } from "@/lib/db/schema";
+import { DEFAULT_NUDGE_TEMPLATE } from "@/lib/tasks/logic";
 
 export const orgProfileSchema = z.object({
   name: z.string().max(120).default(""),
@@ -21,6 +22,7 @@ export const settingSchemas = {
   "privacy.offlineMode": z.boolean(),
   "privacy.sensitiveLocalOnly": z.boolean(),
   "setup.completed": z.boolean(),
+  "tasks.nudgeTemplate": z.string().max(2000),
 } as const;
 
 export type SettingKey = keyof typeof settingSchemas;
@@ -32,6 +34,7 @@ const defaults: { [K in SettingKey]: SettingValue<K> } = {
   "privacy.offlineMode": false,
   "privacy.sensitiveLocalOnly": false,
   "setup.completed": false,
+  "tasks.nudgeTemplate": DEFAULT_NUDGE_TEMPLATE,
 };
 
 export async function getSetting<K extends SettingKey>(key: K): Promise<SettingValue<K>> {

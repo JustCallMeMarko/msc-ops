@@ -1,4 +1,7 @@
 @import "tailwindcss";
+@import "react-day-picker/src/style.css";
+
+@custom-variant dark (&:where(.dark, .dark *));
 
 :root {
   color-scheme: dark;
@@ -110,4 +113,10 @@ textarea:focus-visible {
 
 .mono {
   font-family: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+.rdp-root {
+  --rdp-accent-color: var(--primary);
+  --rdp-accent-background-color: var(--secondary);
+  color: var(--foreground);
 }

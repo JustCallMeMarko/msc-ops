@@ -8,7 +8,7 @@ import { AppSidebar } from "@/components/shell/app-sidebar";
 import { CommandPalette } from "@/components/shell/command-palette";
 import { Topbar } from "@/components/shell/topbar";
 
-function ShellContent({ children }: { children: ReactNode }) {
+function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; breadcrumbLabel?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -35,7 +35,7 @@ function ShellContent({ children }: { children: ReactNode }) {
       } else if (event.key === "?") {
         setShortcutsOpen(true);
       } else if (sequence === "g") {
-        const routes: Record<string, string> = { i: "/", o: "/overview", t: "/tasks", e: "/events", p: "/creatives", f: "/finance", c: "/cbl" };
+        const routes: Record<string, string> = { i: "/", o: "/overview", t: "/tasks", e: "/events", p: "/creatives", f: "/finance", c: "/cbl", m: "/committees" };
         if (routes[event.key]) router.push(routes[event.key]);
         sequence = "";
       } else if (event.key.toLowerCase() === "g") {
@@ -52,7 +52,7 @@ function ShellContent({ children }: { children: ReactNode }) {
     <div className="flex h-screen overflow-hidden bg-background text-foreground">
       <AppSidebar />
       <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar onTogglePanel={togglePanel} onOpenPalette={() => setPaletteOpen(true)} />
+        <Topbar onTogglePanel={togglePanel} onOpenPalette={() => setPaletteOpen(true)} breadcrumbLabel={breadcrumbLabel} />
         <div className="flex min-h-0 flex-1">
           <main className="min-w-0 flex-1 overflow-y-auto p-6">{children}</main>
           {panelOpen && (
@@ -67,7 +67,7 @@ function ShellContent({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" role="dialog" aria-label="Keyboard shortcuts" onClick={() => setShortcutsOpen(false)}>
           <section className="w-full max-w-md rounded-lg border border-border bg-card p-5" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-center justify-between"><h2 className="font-semibold">Keyboard shortcuts</h2><button type="button" onClick={() => setShortcutsOpen(false)} aria-label="Close shortcuts">×</button></div>
-            <dl className="mt-4 grid grid-cols-[1fr_auto] gap-3 text-sm"><dt>Go to inbox / overview / tasks / events</dt><dd className="mono text-muted-foreground">g i/o/t/e</dd><dt>Search</dt><dd className="mono text-muted-foreground">/</dd><dt>Command palette</dt><dd className="mono text-muted-foreground">Ctrl/⌘ K</dd></dl>
+            <dl className="mt-4 grid grid-cols-[1fr_auto] gap-3 text-sm"><dt>Go to inbox / overview / tasks / events / committees</dt><dd className="mono text-muted-foreground">g i/o/t/e/m</dd><dt>Create a task</dt><dd className="mono text-muted-foreground">c</dd><dt>Search</dt><dd className="mono text-muted-foreground">/</dd><dt>Command palette</dt><dd className="mono text-muted-foreground">Ctrl/⌘ K</dd></dl>
           </section>
         </div>
       )}
@@ -76,6 +76,6 @@ function ShellContent({ children }: { children: ReactNode }) {
   );
 }
 
-export function WorkspaceShell({ children }: { children: ReactNode }) {
-  return <Suspense fallback={<div className="h-screen bg-background" />}><ShellContent>{children}</ShellContent></Suspense>;
+export function WorkspaceShell({ children, breadcrumbLabel }: { children: ReactNode; breadcrumbLabel?: string }) {
+  return <Suspense fallback={<div className="h-screen bg-background" />}><ShellContent breadcrumbLabel={breadcrumbLabel}>{children}</ShellContent></Suspense>;
 }

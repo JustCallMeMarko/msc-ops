@@ -8,6 +8,7 @@ import { useTheme } from "next-themes";
 
 const destinations = [
   ["Inbox", "/"], ["Overview", "/overview"], ["Tasks", "/tasks"], ["Events", "/events"],
+  ["Committees", "/committees"],
   ["Creatives", "/creatives"], ["Finance", "/finance"], ["CBL", "/cbl"], ["Files", "/files"],
   ["Templates", "/templates"], ["Chat", "/chat"], ["Manual", "/manual"],
   ["Compliance", "/compliance"], ["Settings", "/settings/general"],
@@ -17,12 +18,14 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
   const router = useRouter();
   const { setTheme, theme } = useTheme();
   const [offline, setOffline] = useState(false);
+  const [tasks, setTasks] = useState<Array<{ number: number; title: string }>>([]);
 
   useEffect(() => {
     if (!open) return;
     void fetch("/api/settings").then((response) => response.json()).then((settings: { "privacy.offlineMode"?: boolean }) => {
       setOffline(Boolean(settings["privacy.offlineMode"]));
     }).catch(() => undefined);
+    void fetch("/api/tasks").then((response) => response.json()).then((rows: Array<{ number: number; title: string }>) => setTasks(rows)).catch(() => setTasks([]));
   }, [open]);
 
   useEffect(() => {
@@ -52,8 +55,17 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                 {label}
               </Command.Item>
             ))}
+            {tasks.map((task) => <Command.Item key={task.number} value={`go to task #${task.number} ${task.title}`} onSelect={() => { router.push(`/tasks/${task.number}`); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Go to #{task.number} · {task.title}</Command.Item>)}
           </Command.Group>
           <Command.Group heading="Actions" className="px-2 py-1 text-xs text-muted-foreground">
+            <Command.Item value="new task" onSelect={() => { router.push("/tasks?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New task</Command.Item>
+            <Command.Item value="new committee" onSelect={() => { router.push("/committees?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New committee</Command.Item>
+            <Command.Item value="copy all digests" onSelect={() => {
+              void fetch("/api/digest").then((response) => response.json()).then(async (rows: Array<{ committee: { name: string }; digest: string }>) => {
+                await navigator.clipboard.writeText(rows.map((row) => `${row.committee.name}\n${row.digest}`).join("\n\n"));
+              });
+              onOpenChange(false);
+            }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Copy all digests</Command.Item>
             <Command.Item value="toggle theme" onSelect={() => { setTheme(theme === "light" ? "dark" : "light"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Toggle theme</Command.Item>
             <Command.Item value="toggle offline mode" onSelect={() => { void apiFetch("/api/settings", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ "privacy.offlineMode": !offline }) }).then(() => setOffline(!offline)); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">
               Toggle offline mode {offline ? "(on)" : "(off)"}
