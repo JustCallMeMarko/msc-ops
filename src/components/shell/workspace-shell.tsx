@@ -9,6 +9,7 @@ import { CommandPalette } from "@/components/shell/command-palette";
 import { GlobalUploadTray } from "@/components/shell/global-upload-tray";
 import { Topbar } from "@/components/shell/topbar";
 import { FinanceChatPanel } from "@/components/ops/finance-chat-panel";
+import { GeneralChat } from "@/components/chat/general-chat";
 
 function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; breadcrumbLabel?: string }) {
   const router = useRouter();
@@ -61,7 +62,7 @@ function ShellContent({ children, breadcrumbLabel }: { children: ReactNode; brea
           {panelOpen && (
             <aside className="w-[340px] min-w-[240px] resize-x overflow-y-auto border-l border-border bg-card p-4">
               <div className="mb-3 flex items-center gap-2 font-semibold"><CommentDiscussionIcon size={16} /> {financeRoute ? "Finance chat" : "AI chat"}</div>
-              {financeRoute ? <FinanceChatPanel key={searchParams.get("ask") ?? "finance-chat"} initialPrompt={searchParams.get("ask") ?? ""} /> : <p className="text-sm text-muted-foreground">AI chat arrives in a later PR.</p>}
+              {financeRoute ? <FinanceChatPanel key={searchParams.get("ask") ?? "finance-chat"} initialPrompt={searchParams.get("ask") ?? ""} /> : <GeneralChat compact scopeRef={pathname.startsWith("/events/") ? `event:${pathname.split("/")[2]}` : pathname.startsWith("/finance") ? "finance" : pathname} />}
             </aside>
           )}
         </div>

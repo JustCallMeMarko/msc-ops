@@ -43,6 +43,12 @@ export async function getLanguageModel(providerId: string, modelId: string): Pro
       return createAnthropic(config)(modelId);
     case "google":
       return createGoogleGenerativeAI(config)(modelId);
+    case "ollama":
+      return createOpenAICompatible({
+        ...config,
+        name: provider.name,
+        supportsStructuredOutputs: true,
+      }).languageModel(modelId);
     case "openai_compatible":
       return createOpenAICompatible({ ...config, name: provider.name }).languageModel(modelId);
     default:

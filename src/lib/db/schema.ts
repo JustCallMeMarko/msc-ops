@@ -420,6 +420,60 @@ export const guideProgress = pgTable("guide_progress", {
   uniqueIndex("guide_progress_guide_step_unique").on(table.guideKey, table.stepKey),
 ]);
 
+export const templates = pgTable("templates", {
+  ...commonColumns,
+  lineageId: uuid("lineage_id").notNull(),
+  name: text("name").notNull(),
+  kind: text("kind").notNull(),
+  source: text("source").notNull(),
+  format: text("format").notNull(),
+  fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "restrict" }),
+  version: integer("version").notNull().default(1),
+  previousTemplateId: uuid("previous_template_id").references((): AnyPgColumn => templates.id, { onDelete: "restrict" }),
+  active: boolean("active").notNull().default(true),
+  structure: jsonb("structure").notNull().default({ targets: [] }),
+  mapping: jsonb("mapping").notNull().default({}),
+  mappingConfirmedAt: timestamp("mapping_confirmed_at", { withTimezone: true }),
+  warnings: text("warnings").array().notNull().default(sql`'{}'::text[]`),
+}, (table) => [
+  uniqueIndex("templates_lineage_active_unique").on(table.lineageId).where(sql`${table.active}`),
+  index("templates_previous_version_idx").on(table.previousTemplateId, table.version),
+  index("templates_kind_active_idx").on(table.kind, table.active),
+  check("templates_kind_check", sql`${table.kind} in ('activity_proposal', 'par', 'liquidation', 'budget_proposal', 'financial_statement', 'guest_list', 'booth_declaration', 'letter_of_explanation', 'turnover_certificate', 'resolution', 'other')`),
+  check("templates_source_check", sql`${table.source} in ('sdao', 'scoa', 'org', 'builtin')`),
+  check("templates_format_check", sql`${table.format} in ('docx', 'xlsx', 'pdf_form')`),
+  check("templates_version_check", sql`${table.version} > 0`),
+]);
+
+export const packets = pgTable("packets", {
+  ...commonColumns,
+  kind: text("kind").notNull(),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "restrict" }),
+}, (table) => [
+  index("packets_entity_idx").on(table.entityType, table.entityId),
+  check("packets_kind_check", sql`${table.kind} in ('pre_event', 'post_event', 'scoa_audit', 'renewal')`),
+  check("packets_entity_type_check", sql`${table.entityType} in ('event', 'term', 'org')`),
+]);
+
+export const generatedDocs = pgTable("generated_docs", {
+  ...commonColumns,
+  templateId: uuid("template_id").notNull().references(() => templates.id, { onDelete: "restrict" }),
+  templateVersion: integer("template_version").notNull(),
+  fileId: uuid("file_id").notNull().references(() => files.id, { onDelete: "restrict" }),
+  entityType: text("entity_type").notNull(),
+  entityId: uuid("entity_id").notNull(),
+  dataHash: text("data_hash").notNull(),
+  askValues: jsonb("ask_values").notNull().default({}),
+  packetId: uuid("packet_id").references(() => packets.id, { onDelete: "set null" }),
+}, (table) => [
+  index("generated_docs_template_idx").on(table.templateId, table.templateVersion),
+  index("generated_docs_entity_idx").on(table.entityType, table.entityId),
+  uniqueIndex("generated_docs_file_unique").on(table.fileId),
+  check("generated_docs_entity_type_check", sql`${table.entityType} in ('event', 'term', 'org')`),
+]);
+
 const vectorValue = customType<{ data: string; driverData: string }>({ dataType: () => "vector" });
 const tsvectorValue = customType<{ data: string; driverData: string }>({ dataType: () => "tsvector" });
 
@@ -526,5 +580,6 @@ export const schema = {
   tasks, taskActivity, checklistItems, attendees, announcementTemplates, files, fileLinks,
   posts, postingRules, postAssets, captions, captionTemplates, hashtagSets, mentionLists, postActivity,
   accounts, ledgerEntries, ledgerReceipts, budgetLines, liquidations, liquidationItems, reconciliations, guideProgress,
+  templates, packets, generatedDocs,
   documents, docPages, docChunks, chunkEmbeddings, jobs, chatThreads, chatMessages,
 };

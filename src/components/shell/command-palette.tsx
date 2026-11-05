@@ -82,6 +82,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
           </Command.Group>
           <Command.Group heading="Actions" className="px-2 py-1 text-xs text-muted-foreground">
             <Command.Item value="new task" onSelect={() => { router.push("/tasks?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New task</Command.Item>
+            <Command.Item value="new chat" onSelect={() => { router.push("/chat?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New chat</Command.Item>
+            <Command.Item value="generate document" onSelect={() => { router.push("/templates"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Generate document…</Command.Item>
+            <Command.Item value="upload template" onSelect={() => { router.push("/templates?upload=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Upload template</Command.Item>
             <Command.Item value="new committee" onSelect={() => { router.push("/committees?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New committee</Command.Item>
             <Command.Item value="new event" onSelect={() => { router.push("/events?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New event</Command.Item>
             <Command.Item value="new post" onSelect={() => { router.push("/creatives?new=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">New post</Command.Item>
