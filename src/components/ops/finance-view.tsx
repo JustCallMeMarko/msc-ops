@@ -38,6 +38,7 @@ const kindLabels: Record<string, string> = { income: "Income", expense: "Expense
 const severityStyle = { critical: "border-destructive/40 bg-destructive/10 text-destructive", warning: "border-attention/40 bg-attention/10 text-attention", info: "border-border bg-secondary text-muted-foreground" };
 const pesos = (value: number) => formatPeso(value);
 const displayDay = (value: string | null | undefined) => value ? new Intl.DateTimeFormat("en-PH", { timeZone: "Asia/Manila", dateStyle: "medium" }).format(new Date(value)) : "Not set";
+const shortAccountName = (value: string) => value.replace(/\s*·\s*MSC Operations\b.*$/i, "");
 
 export function FinanceView() {
   const router = useRouter();
@@ -432,15 +433,36 @@ export function FinanceView() {
 
     {tab === "ledger" && <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2"><div className="min-w-64 flex-1"><FilterBar placeholder={'account:"China Bank" event:past-career-forum category:food is:missing-receipt from:2026-01-01'} /></div><span className="inline-flex items-center gap-1 rounded-full border border-success/40 bg-success/10 px-2 py-1 text-xs text-success"><ShieldCheckIcon size={13} />Chain verified</span></div>
-      <div ref={listRef} className="h-[60vh] overflow-auto rounded-md border border-border bg-card">
-        <table className="w-full min-w-[1220px] text-left text-xs"><thead className="sticky top-0 z-10 bg-secondary text-muted-foreground"><tr>{["Seq", "Date", "Kind", "Category", "Account", "Event", "Description", "OR#", "Amount", "Account balance", "Receipt"].map((item) => <th key={item} className="p-3 font-medium">{item}</th>)}</tr></thead>
+      <div ref={listRef} className="h-[60vh] overflow-x-auto overflow-y-auto rounded-md border border-border bg-card xl:overflow-x-hidden">
+        <table className="w-full min-w-[1120px] table-fixed text-left text-[11px] xl:min-w-0"><thead className="text-muted-foreground"><tr>
+          <th className="sticky top-0 left-0 z-30 w-[5%] min-w-12 bg-secondary px-1.5 py-3 font-medium">Seq</th>
+          <th className="sticky top-0 left-[5%] z-30 w-[9%] min-w-[5.5rem] bg-secondary px-1.5 py-3 font-medium">Date</th>
+          <th className="sticky top-0 z-20 w-[8%] bg-secondary px-1.5 py-3 font-medium">Kind</th>
+          <th className="sticky top-0 z-20 w-[9%] bg-secondary px-1.5 py-3 font-medium">Category</th>
+          <th className="sticky top-0 z-20 w-[9%] bg-secondary px-1.5 py-3 font-medium">Account</th>
+          <th className="sticky top-0 z-20 w-[12%] bg-secondary px-1.5 py-3 font-medium">Event</th>
+          <th className="sticky top-0 z-20 w-[14%] bg-secondary px-1.5 py-3 font-medium">Description</th>
+          <th className="sticky top-0 z-20 w-[6%] bg-secondary px-1.5 py-3 font-medium">OR#</th>
+          <th className="sticky top-0 z-20 w-[8%] bg-secondary px-1.5 py-3 text-right font-medium">Amount</th>
+          <th className="sticky top-0 z-20 w-[10%] bg-secondary px-1.5 py-3 text-right font-medium">Account balance</th>
+          <th className="sticky top-0 z-20 w-[10%] bg-secondary px-1.5 py-3 font-medium">Receipt</th>
+        </tr></thead>
           <tbody style={{ height: virtualizer.getTotalSize(), position: "relative" }}>{virtualizer.getVirtualItems().map((virtualRow) => {
             const entry = entries[virtualRow.index];
-            return <tr key={entry.id} onClick={() => router.push(`/finance?tab=ledger&panel=entry&id=${entry.id}`)} className={`absolute left-0 right-0 cursor-pointer border-b border-border hover:bg-secondary/60 ${["void", "restore"].includes(entry.kind) ? "text-muted-foreground line-through" : ""}`} style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
-              <td className="mono p-3">#{entry.seq}</td><td className="p-3">{displayDay(entry.occurredOn)}</td><td className="p-3"><Label color={entry.kind === "income" ? "green" : entry.kind === "expense" ? "red" : "gray"}>{kindLabels[entry.kind] ?? entry.kind}</Label></td>
-              <td className="p-3">{FINANCE_CATEGORY_LABELS[entry.category as keyof typeof FINANCE_CATEGORY_LABELS] ?? entry.category}</td><td className="max-w-[180px] truncate p-3">{entry.account?.name ?? "—"}</td><td className="max-w-[180px] truncate p-3">{entry.event?.name ?? "—"}</td><td className="max-w-[250px] truncate p-3">{entry.description || entry.counterparty}{entry.reason ? ` · ${entry.reason}` : ""}</td><td className="mono p-3">{entry.orNumber || "—"}</td>
-              <td className={`mono p-3 text-right ${entry.kind === "income" ? "text-success" : entry.kind === "expense" ? "text-destructive" : ""}`}>{pesos(entry.amountCentavos)}</td><td className="mono p-3 text-right">{pesos(entry.runningBalanceCentavos)}</td>
-              <td className="p-3">{entry.receiptCount ? <span className="text-success">Receipt</span> : entry.kind === "expense" ? <Label color="yellow">Missing receipt</Label> : "—"}</td>
+            const eventName = entry.event?.name ?? "—";
+            const description = `${entry.description || entry.counterparty}${entry.reason ? ` · ${entry.reason}` : ""}`;
+            return <tr key={entry.id} onClick={() => router.push(`/finance?tab=ledger&panel=entry&id=${entry.id}`)} className={`group absolute left-0 right-0 cursor-pointer border-b border-border hover:bg-secondary/60 ${["void", "restore"].includes(entry.kind) ? "text-muted-foreground line-through" : ""}`} style={{ height: virtualRow.size, transform: `translateY(${virtualRow.start}px)` }}>
+              <td className="mono sticky left-0 z-10 w-[5%] min-w-12 bg-card px-1.5 py-2 text-[10px] group-hover:bg-secondary/60">#{entry.seq}</td>
+              <td className="sticky left-[5%] z-10 w-[9%] min-w-[5.5rem] whitespace-nowrap bg-card px-1.5 py-2 text-[10px] group-hover:bg-secondary/60">{displayDay(entry.occurredOn)}</td>
+              <td className="px-1.5 py-2"><span className={`inline-flex max-w-full truncate rounded-full border px-1.5 py-0.5 text-[10px] ${entry.kind === "income" ? "border-success/50 bg-success/10 text-success" : entry.kind === "expense" ? "border-destructive/50 bg-destructive/10 text-destructive" : "border-border bg-secondary text-muted-foreground"}`}>{kindLabels[entry.kind] ?? entry.kind}</span></td>
+              <td className="truncate px-1.5 py-2" title={FINANCE_CATEGORY_LABELS[entry.category as keyof typeof FINANCE_CATEGORY_LABELS] ?? entry.category}>{FINANCE_CATEGORY_LABELS[entry.category as keyof typeof FINANCE_CATEGORY_LABELS] ?? entry.category}</td>
+              <td className="truncate px-1.5 py-2" title={entry.account?.name ?? "—"}>{entry.account ? shortAccountName(entry.account.name) : "—"}</td>
+              <td className="px-1.5 py-2"><span title={eventName} className="inline-flex max-w-full truncate rounded-full border border-border bg-secondary/60 px-1.5 py-0.5 text-[10px] text-muted-foreground">{eventName}</span></td>
+              <td className="px-1.5 py-2"><span title={description} className="block truncate">{description}</span></td>
+              <td className="mono truncate px-1.5 py-2" title={entry.orNumber}>{entry.orNumber || "—"}</td>
+              <td className={`mono truncate px-1.5 py-2 text-right text-[10px] ${entry.kind === "income" ? "text-success" : entry.kind === "expense" ? "text-destructive" : ""}`}>{pesos(entry.amountCentavos)}</td>
+              <td className="mono truncate px-1.5 py-2 text-right text-[10px]">{pesos(entry.runningBalanceCentavos)}</td>
+              <td className="px-1.5 py-2">{entry.receiptCount ? <span className="whitespace-nowrap text-success" title="Receipt attached">Receipt</span> : entry.kind === "expense" ? <span title="Missing receipt"><Label color="yellow">Missing</Label></span> : "—"}</td>
             </tr>;
           })}</tbody>
         </table>
