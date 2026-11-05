@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { EmptyState } from "@/components/patterns/empty-state";
+import { InboxView } from "@/components/ops/inbox-view";
 import Link from "next/link";
 import { formatPeso } from "@/lib/finance/logic";
 
@@ -37,10 +38,12 @@ export function OverviewView() {
   if (!data) return <div className="space-y-3" aria-label="Loading overview">{[0, 1, 2].map((item) => <div key={item} className="h-36 animate-pulse rounded-md bg-secondary" />)}</div>;
   if (!data.committees.length) return <div className="space-y-5">
     <FinanceTile finance={finance} />
+    <InboxSection />
     <EmptyState title="No committee activity yet" teachingText="Create committees and log check-in replies to see progress trends here." />
   </div>;
   return <div className="space-y-6">
     <FinanceTile finance={finance} />
+    <InboxSection />
     <section className="overflow-x-auto rounded-md border border-border bg-card"><table className="w-full min-w-[640px] text-left text-sm">
       <thead className="border-b border-border text-xs uppercase text-muted-foreground"><tr>{["Committee", "Open", "Overdue", "Done this month", "On-time rate"].map((item) => <th key={item} className="p-3">{item}</th>)}</tr></thead>
       <tbody>{data.committees.map(({ committee, counts }) => <tr key={committee.id} className="border-b border-border last:border-0"><th className="p-3 font-medium">{committee.name}</th><td className="mono p-3">{counts.open}</td><td className="mono p-3 text-attention">{counts.overdue}</td><td className="mono p-3">{counts.doneThisMonth}</td><td className="mono p-3">{counts.onTimeRate === null ? <span title="No completed tasks with deadlines yet">—</span> : `${counts.onTimeRate}%`}</td></tr>)}</tbody>
@@ -56,6 +59,13 @@ export function OverviewView() {
       <div className="grid gap-3 md:grid-cols-2">{data.committees.map(({ committee, heatmap }) => <div key={committee.id} className="rounded-md border border-border bg-card p-4"><h3 className="mb-3 text-sm font-medium">{committee.name}</h3><div className="grid auto-cols-[11px] grid-flow-col grid-rows-7 gap-[3px] overflow-x-auto">{heatmap.map((day) => <span key={day.date} title={`${day.date}: ${day.count} ${day.count === 1 ? "reply" : "replies"}`} aria-label={`${day.date}: ${day.count} ${day.count === 1 ? "reply" : "replies"}`} className={`size-[11px] rounded-[2px] border ${heatmapColors[Math.min(day.count, 4)]}`} />)}</div></div>)}</div>
     </section>
   </div>;
+}
+
+function InboxSection() {
+  return <section className="space-y-3">
+    <div><h2 className="font-semibold">Needs you</h2><p className="text-sm text-muted-foreground">Check-ins, deadlines, posts, and finance items that need attention.</p></div>
+    <InboxView />
+  </section>;
 }
 
 function FinanceTile({ finance }: { finance: { totalBalanceCentavos: number; unliquidatedCentavos: number; missingReceiptCount: number } | null }) {
