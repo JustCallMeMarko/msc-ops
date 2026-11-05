@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getLanguageModel } from "@/lib/ai/providers";
 import { getDb } from "@/lib/db/client";
-import { providers } from "@/lib/db/schema";
+import { chatMessages, chatThreads, providers } from "@/lib/db/schema";
 import { getFinanceSnapshot } from "@/lib/finance/db-utils";
 import { FINANCE_GUIDES } from "@/lib/finance/guides";
 import { stripInvalidGuideCitations } from "@/lib/finance/chat";
@@ -13,6 +13,7 @@ import { getSetting } from "@/lib/settings";
 export const dynamic = "force-dynamic";
 
 const chatSchema = z.object({
+  threadId: z.string().uuid().optional(),
   messages: z.array(z.object({
     role: z.enum(["user", "assistant"]),
     content: z.string().max(20_000),
@@ -37,6 +38,19 @@ export async function POST(request: Request) {
   if (localOnly && !isLocal) {
     return NextResponse.json({ error: "Finance chat is disabled for cloud providers while sensitive data is set to local-only." }, { status: 409 });
   }
+  const latestUserMessage = [...parsed.data.messages].reverse().find((message) => message.role === "user");
+  if (!latestUserMessage) return NextResponse.json({ error: "Add a question before sending." }, { status: 400 });
+  let threadId = parsed.data.threadId;
+  if (threadId) {
+    const [thread] = await db.select().from(chatThreads)
+      .where(and(eq(chatThreads.id, threadId), eq(chatThreads.scope, "finance"), isNull(chatThreads.deletedAt))).limit(1);
+    if (!thread) return NextResponse.json({ error: "Finance conversation not found." }, { status: 404 });
+  } else {
+    const [thread] = await db.insert(chatThreads).values({ scope: "finance", title: latestUserMessage.content.slice(0, 100) }).returning();
+    if (!thread) return NextResponse.json({ error: "Could not start Finance chat." }, { status: 500 });
+    threadId = thread.id;
+  }
+  const activeThreadId = threadId;
   const snapshot = await getFinanceSnapshot();
   const guides = FINANCE_GUIDES.map((guide) => ({
     key: guide.key,
@@ -58,6 +72,15 @@ export async function POST(request: Request) {
     guides,
   };
   const system = `You are the Finance guide for MSC Ops. Give clear, practical steps and explain why they matter. Use only the supplied finance context and RSO Manual guide steps. Cite manual steps exactly as [guide_key:step_key]; never invent citations. Do not include counterparty names. For a draft entry, you may provide a single fenced \`\`\`entry JSON block with the fields accepted by POST /api/finance/entries; do not claim it was saved. Context: ${JSON.stringify(context)}`;
+  const modelKey = `${provider.type}:${defaults.chat.model}`;
+  await db.insert(chatMessages).values({
+    threadId: activeThreadId,
+    role: "user",
+    content: latestUserMessage.content,
+    citations: [],
+    docIds: [],
+    modelKey,
+  });
   try {
     const model = await getLanguageModel(defaults.chat.providerId, defaults.chat.model);
     const result = streamText({
@@ -69,12 +92,18 @@ export async function POST(request: Request) {
     const responseStream = new ReadableStream<Uint8Array>({
       async start(controller) {
         let pending = "";
+        let answer = "";
+        let partial = false;
         const sourceIds = new Set<string>();
         const emitText = (text: string) => {
           const cleaned = stripInvalidGuideCitations(text);
           for (const id of cleaned.sourceIds) sourceIds.add(id);
-          if (cleaned.text) controller.enqueue(encoder.encode(`${JSON.stringify({ type: "text", text: cleaned.text })}\n`));
+          if (cleaned.text) {
+            answer += cleaned.text;
+            controller.enqueue(encoder.encode(`${JSON.stringify({ type: "text", text: cleaned.text })}\n`));
+          }
         };
+        controller.enqueue(encoder.encode(`${JSON.stringify({ type: "thread", threadId: activeThreadId })}\n`));
         try {
           for await (const token of result.textStream) {
             pending += token;
@@ -94,9 +123,29 @@ export async function POST(request: Request) {
             const step = guide?.steps.find((item) => item.key === stepKey);
             return { id, guide: guide?.title ?? guideKey, step: step?.title ?? stepKey, citation: step?.citation ?? null };
           });
+          await db.insert(chatMessages).values({
+            threadId: activeThreadId,
+            role: "assistant",
+            content: answer,
+            citations: sources,
+            docIds: [],
+            modelKey,
+            partial,
+          });
           controller.enqueue(encoder.encode(`${JSON.stringify({ type: "sources", sources })}\n`));
           controller.close();
         } catch {
+          partial = true;
+          const sources = [...sourceIds];
+          await db.insert(chatMessages).values({
+            threadId: activeThreadId,
+            role: "assistant",
+            content: answer,
+            citations: sources,
+            docIds: [],
+            modelKey,
+            partial,
+          });
           controller.enqueue(encoder.encode(`${JSON.stringify({ type: "error", error: "Finance chat could not reach the configured provider." })}\n`));
           controller.close();
         }

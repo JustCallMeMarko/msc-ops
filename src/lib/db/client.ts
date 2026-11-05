@@ -87,6 +87,9 @@ async function openDatabase(): Promise<Database> {
     await pg.waitReady;
     const db = drizzle(pg, { schema });
     await migrate(db, { migrationsFolder: path.join(process.cwd(), "drizzle") });
+    const database = { pg, db };
+    const { resumeDocumentJobs } = await import("@/lib/docs/job-queue");
+    await resumeDocumentJobs(database);
     await db.execute(
       `INSERT INTO app_meta (key, value) VALUES ('schema_version', '"1"'::jsonb)
        ON CONFLICT (key) DO NOTHING`,
@@ -104,7 +107,7 @@ async function openDatabase(): Promise<Database> {
         console.warn("Snapshot could not be created:", error);
       });
     }
-    return { pg, db };
+    return database;
   } catch (error) {
     await pg?.close().catch(() => undefined);
     await release();

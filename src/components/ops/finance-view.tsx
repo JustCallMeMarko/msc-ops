@@ -20,6 +20,7 @@ import { apiFetch } from "@/lib/api-client";
 import { FINANCE_CATEGORIES, FINANCE_CATEGORY_LABELS } from "@/lib/finance/constants";
 import { formatPeso, parsePeso } from "@/lib/finance/logic";
 import { FINANCE_GUIDES } from "@/lib/finance/guides";
+import { ManualCitation } from "@/components/docs/manual-citation";
 
 type Account = { id: string; name: string; kind: string; bankName: string | null; accountLast4: string | null; archivedAt: string | null; balanceCentavos: number };
 type Action = { id: string; severity: "critical" | "warning" | "info"; title: string; detail: string; dueAt?: string; action: { guide: string; step: string } | { href: string } };
@@ -553,7 +554,7 @@ export function FinanceView() {
         {selected && <ol className="mt-4 space-y-3">{guide.steps.map((step) => {
           const checked = progress.some((row) => row.guideKey === guide.key && row.stepKey === step.key && row.doneAt);
           const focused = selectedStepKey === step.key;
-          return <li id={`finance-guide-step-${guide.key}-${step.key}`} key={step.key} className={`flex gap-3 border-t border-border pt-3 ${focused ? "rounded-md bg-primary/5 px-3" : ""}`}><input aria-label={`Complete ${step.title}`} type="checkbox" checked={Boolean(checked)} onChange={(event) => void toggleStep(guide.key, step.key, event.target.checked)} /><div><h3 className="font-medium">{step.title}</h3><p className="mt-1 text-sm">{step.detail}</p><p className="mt-1 text-xs text-muted-foreground">Why: {step.why}</p><div className="mt-2 flex flex-wrap items-center gap-2"><span className="inline-flex rounded-full border border-border bg-secondary px-2 py-1 text-xs">{step.citation ? `RSO p.${step.citation.page} · ${step.citation.section}` : "Org practice"}</span><Button type="button" size="sm" variant="outline" onClick={() => {
+          return <li id={`finance-guide-step-${guide.key}-${step.key}`} key={step.key} className={`flex gap-3 border-t border-border pt-3 ${focused ? "rounded-md bg-primary/5 px-3" : ""}`}><input aria-label={`Complete ${step.title}`} type="checkbox" checked={Boolean(checked)} onChange={(event) => void toggleStep(guide.key, step.key, event.target.checked)} /><div><h3 className="font-medium">{step.title}</h3><p className="mt-1 text-sm">{step.detail}</p><p className="mt-1 text-xs text-muted-foreground">Why: {step.why}</p><div className="mt-2 flex flex-wrap items-center gap-2">{step.citation ? <ManualCitation page={step.citation.page} query={step.title} label={`RSO p.${step.citation.page} · ${step.citation.section}`} /> : <span className="inline-flex rounded-full border border-border bg-secondary px-2 py-1 text-xs">Org practice</span>}<Button type="button" size="sm" variant="outline" onClick={() => {
             const prompt = `How do I complete "${step.title}" for "${guide.title}"? Please cite [${guide.key}:${step.key}].`;
             router.push(`/finance?tab=guides&guide=${guide.key}&step=${step.key}&panel=finance-chat&ask=${encodeURIComponent(prompt)}`);
           }}>Ask AI about this step</Button></div></div></li>;

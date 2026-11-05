@@ -30,6 +30,25 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     void fetch("/api/posts").then((response) => response.json()).then((rows: Array<{ id: string; title: string }>) => setPosts(rows)).catch(() => setPosts([]));
   }, [open]);
 
+  async function openManual() {
+    const response = await fetch("/api/documents");
+    const payload = await response.json().catch(() => ({ documents: [] }));
+    const manual = (payload.documents as Array<{ id: string; kind: string; active: boolean }>).find((document) => document.kind === "rso_manual" && document.active);
+    router.push(manual ? `/cbl/${manual.id}` : "/cbl");
+    onOpenChange(false);
+  }
+
+  async function askCbl() {
+    const response = await fetch("/api/documents");
+    const payload = await response.json().catch(() => ({ documents: [] }));
+    const documents = payload.documents as Array<{ id: string; kind: string; active: boolean }>;
+    const document = documents.find((row) => row.kind === "cbl" && row.active)
+      ?? documents.find((row) => row.kind === "rso_manual" && row.active);
+    const query = encodeURIComponent("What should I know about the CBL and RSO Manual?");
+    router.push(document ? `/cbl/${document.id}?ask=${query}` : `/cbl?ask=${query}`);
+    onOpenChange(false);
+  }
+
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
@@ -70,6 +89,8 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
             <Command.Item value="add income" onSelect={() => { router.push("/finance?tab=overview"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Add income</Command.Item>
             <Command.Item value="open ledger" onSelect={() => { router.push("/finance?tab=ledger"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Open ledger</Command.Item>
             <Command.Item value="finance guides" onSelect={() => { router.push("/finance?tab=guides"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Finance guides</Command.Item>
+            <Command.Item value="ask the cbl document library question" onSelect={() => { void askCbl(); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Ask the CBL…</Command.Item>
+            <Command.Item value="open rso manual" onSelect={() => { void openManual(); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Open RSO Manual</Command.Item>
             <Command.Item value="upload file" onSelect={() => { router.push("/files?upload=1"); onOpenChange(false); }} className="cursor-pointer rounded px-3 py-2 text-sm data-[selected=true]:bg-secondary">Upload file</Command.Item>
             <Command.Item value="copy all digests" onSelect={() => {
               void fetch("/api/digest").then((response) => response.json()).then(async (rows: Array<{ committee: { name: string }; digest: string }>) => {

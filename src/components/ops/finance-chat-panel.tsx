@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { apiFetch } from "@/lib/api-client";
 import { parseEntryDraft } from "@/lib/finance/chat";
+import { ManualCitation } from "@/components/docs/manual-citation";
 
 type Source = { id: string; guide: string; step: string; citation: { page: number; section: string } | null };
 type Message = { role: "user" | "assistant"; content: string; sources?: Source[] };
@@ -16,6 +17,7 @@ export function FinanceChatPanel({ initialPrompt = "" }: { initialPrompt?: strin
   const [input, setInput] = useState(initialPrompt);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [busy, setBusy] = useState(false);
+  const [threadId, setThreadId] = useState("");
   useEffect(() => { void fetch("/api/settings").then((response) => response.json()).then((settings: Record<string, { chat?: unknown }>) => setConfigured(Boolean(settings["ai.defaults"]?.chat))).catch(() => setConfigured(false)); }, []);
   async function send(event: React.FormEvent) {
     event.preventDefault();
@@ -23,7 +25,7 @@ export function FinanceChatPanel({ initialPrompt = "" }: { initialPrompt?: strin
     const next = [...messages, { role: "user" as const, content: input.trim() }];
     setMessages(next); setInput(""); setBusy(true);
     try {
-      const response = await apiFetch("/api/finance/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ messages: next.map(({ role, content }) => ({ role, content })) }) });
+      const response = await apiFetch("/api/finance/chat", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ threadId: threadId || undefined, messages: next.map(({ role, content }) => ({ role, content })) }) });
       if (!response.ok || !response.body) {
         const problem = await response.json().catch(() => ({})) as { error?: string };
         toast.error(problem.error ?? "Finance chat is unavailable.");
@@ -39,7 +41,8 @@ export function FinanceChatPanel({ initialPrompt = "" }: { initialPrompt?: strin
         const lines = buffer.split("\n"); buffer = lines.pop() ?? "";
         for (const line of lines) {
           if (!line) continue;
-          const event = JSON.parse(line) as { type: string; text?: string; sources?: Source[]; error?: string };
+          const event = JSON.parse(line) as { type: string; text?: string; sources?: Source[]; error?: string; threadId?: string };
+          if (event.type === "thread" && event.threadId) setThreadId(event.threadId);
           if (event.type === "text") answer += event.text ?? "";
           if (event.type === "sources") sources = event.sources ?? [];
           if (event.type === "error") throw new Error(event.error);
@@ -65,7 +68,7 @@ export function FinanceChatPanel({ initialPrompt = "" }: { initialPrompt?: strin
           const parsed = parseEntryDraft(message.content);
           return <><p className="whitespace-pre-wrap">{parsed.text}</p>{parsed.invalidBlock && <p className="mt-2 text-xs text-muted-foreground">The suggested entry block was invalid and is shown as text.</p>}
             {parsed.draft && <EntryDraft draft={parsed.draft as FinanceDraft} onConfirm={confirmDraft} />}
-            {message.sources?.length ? <div className="mt-3 border-t border-border pt-2"><p className="text-xs font-semibold">Sources</p>{message.sources.map((source) => <p key={source.id} className="mt-1 text-xs text-muted-foreground">{source.guide} · {source.step}{source.citation ? ` · RSO p.${source.citation.page} §${source.citation.section}` : " · Org practice"}</p>)}</div> : <p className="mt-2 text-xs text-muted-foreground">Sources: no guide steps cited.</p>}
+            {message.sources?.length ? <div className="mt-3 border-t border-border pt-2"><p className="text-xs font-semibold">Sources</p>{message.sources.map((source) => <p key={source.id} className="mt-1 text-xs text-muted-foreground">{source.guide} · {source.step} {source.citation ? <ManualCitation page={source.citation.page} query={source.step} label={`RSO p.${source.citation.page} §${source.citation.section}`} /> : " · Org practice"}</p>)}</div> : <p className="mt-2 text-xs text-muted-foreground">Sources: no guide steps cited.</p>}
           </>;
         })() : message.content}
       </article>)}
